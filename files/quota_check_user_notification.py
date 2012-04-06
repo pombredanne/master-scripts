@@ -1,0 +1,219 @@
+#!/usr/bin/env python
+##
+#
+# Copyright 2012 Andy Georges
+#
+# This file is part of the tools originally by the HPC team of
+# Ghent University (http://ugent.be/hpc).
+#
+# This is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation v2.
+'''Script to check for quota transgressions and notify the offending users.
+
+- relies on mmrepquota to get a quick estimate of user quota
+- checks all known GPFS mounted file systems
+
+Created Mar 8, 2012
+
+@author Andy Georges
+'''
+
+# author: Andy Georges
+
+import logging
+import re
+import sys
+
+## FIXME: deprecated in >= 2.7
+from optparse import OptionParser
+from lockfile import LockFailed
+
+import vsc.fancylogger as fancylogger
+
+from vsc.exceptions import VscError
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+
+from vsc.gpfs.quota.mmfs_utils import MMRepQuota
+from vsc.gpfs.quota.entities import User, VO
+from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
+from vsc.gpfs.quota.report import MailReporter, NagiosReporter
+from vsc.gpfs.utils.exceptions import CriticalException
+
+## Constants
+NAGIOS_CHECK_FILENAME = '/var/log/quota/gpfs_quota_checker.nagios.pickle'
+NAGIOS_HEADER = 'quota_check'
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 30 * 60  ## 30 minutes
+
+QUOTA_CHECK_LOG_FILE = '/var/log/quota/gpfs_quota_checker.log'
+QUOTA_CHECK_REMINDER_CACHE_FILENAME = '/var/log/quota/gpfs_quota_checker.report.reminderCache.pickle'
+QUOTA_CHECK_LOCK_FILE = '/var/run/gpfs_quota_checker_tpid.lock'
+
+debug = True
+#debug = False
+
+# logger setup
+fancylogger.logToFile(QUOTA_CHECK_LOG_FILE)
+fancylogger.logToScreen(False)
+fancylogger.setLogLevel(logging.INFO)
+logger = fancylogger.getLogger('gpfs_quota_checker')
+logger.setLevel(logging.INFO)
+
+
+opt_parser = OptionParser()
+opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
+
+
+def get_gpfs_mount_points():
+    '''Find out which devices are mounted under GPFS.'''
+    source = '/proc/mounts'
+    reg_mount = re.compile(r"^(?P<dev>\S+)\s+(?P<mntpt>\S+)\s+gpfs")
+    f = file(source, 'r')
+    ms = []
+    for fs in f.readlines():
+        r = reg_mount.search(fs)
+        if r:
+            (dev, _) = r.groups()
+            ms.append(dev)
+    if ms == []:
+        logger.critical('no devices found that are mounted under GPFS')
+        raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
+    ## The following needs to be hardcoded
+    if '/dev/home/' not in ms:
+        ms.append('/dev/home')
+    return ms
+
+
+def get_mmrepquota_maps(devices):
+    '''Run the mmrepquota command and parse all data into user and VO maps.
+
+    @type devices: [ String ]
+
+    Returns (user dictionary, vo dictionary).
+    '''
+    user_map = {}
+    vo_map = {}
+
+    for device in devices:
+
+        mmfs = MMRepQuota(device)
+        mmfs_output_lines = mmfs.execute()
+
+        uM = mmfs.parse_user_quota_lines(mmfs_output_lines, timestamp=True)
+        fM = mmfs.parse_vo_quota_lines(mmfs_output_lines, timestamp=True)
+
+        if uM is None:
+            logger.critical("could not obtain quota information for users for device %s" % (device))
+            #raise CriticalException("could not gather user data from mmrepquota for device %s" % (device))
+        if fM is None:
+            logger.critical("could not obtain quota information for VOs for device %s" % (device))
+            #raise CriticalException("could not gather vo data from mmrepquota for device %s" % (device))
+
+        for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
+            user = user_map.get(uId, User(uId))
+            user.update_quota(device, used, soft, hard, doubt, expired, ts)
+            user_map[uId] = user
+
+        for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
+            vo = vo_map.get(vId, VO(vId))
+            vo.update_quota(device, used, soft, hard, doubt, expired, ts)
+            vo_map[vId] = vo
+
+    return (user_map, vo_map)
+
+
+def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
+    '''Analyse the data blobs we gathered and build a summary for nagios.
+
+    @type ex_users: [ quota.entities.User ]
+    @type ex_vos: [ quota.entities.VO ]
+    @type user_count: int
+    @type vo_count: int
+
+    Returns a tuple with two elements:
+        - the exit code to be provided when the script runs as a nagios check
+        - the message to be printed when the script runs as a nagios check
+    '''
+    ex_u = len(ex_users)
+    ex_v = len(ex_vos)
+    if ex_u == 0 and ex_v == 0:
+        return (NagiosReporter.NAGIOS_EXIT_OK, "OK | ex_u=0 ex_v=0 pU=0 pV=0")
+    else:
+        pU = float(ex_u) / user_count
+        pV = float(ex_v) / vo_count
+        return (NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING quota exceeded | ex_u=%d ex_v=%d pU=%f pV=%f" % (ex_u, ex_v, pU, pV))
+
+
+def main(argv):
+
+    (opts, args) = opt_parser.parse_args(argv)
+
+    logger.info('started GPFS quota check run.')
+
+    nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
+
+    if opts.nagios:
+        nagios_reporter.report_and_exit()
+        sys.exit(0)  # not reached
+
+    lockfile = TimestampedPidLockfile(QUOTA_CHECK_LOCK_FILE)
+    try:
+        lockfile.acquire()
+    except (LockFileReadError, LockFailed), err:
+        logger.critical('Cannot obtain lock, bailing')
+        nagios_reporter.cache(2, "CRITICAL quota check script failed to obtain lock")
+        sys.exit(2)
+
+    try:
+        mount_points = get_gpfs_mount_points()
+        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points)
+
+        if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
+            raise CriticalException('no usable data was found in the mmrepquota output')
+
+        ## figure out which users are crossing their softlimits
+        ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
+        logger.info("found %s users who are exceeding their quota" % len(ex_users))
+
+        ## figure out which VO's are exceeding their softlimits
+        ## currently, we're not using this, VO's should have plenty of space
+        ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
+        logger.info("found %s VOs who are exceeding their quota" % len(ex_vos))
+
+        # FIXME: cache the storage quota information (test for exceeding users)
+        u_storage = UserFsQuotaStorage()
+        for user in mm_rep_quota_map_users.values():
+            try:
+                r = u_storage.store_quota(user)
+            except VscError, err:
+                pass  ## we're just moving on, trying the rest of the users. The error will have been logged anyway.
+
+        vStorage = VoFsQuotaStorage()
+        for v_storage in mm_rep_quota_map_vos.values():
+            try:
+                r = vStorage.store_quota(v_storage)
+            except VscError, err:
+                pass  ## we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
+
+        # Report to the users who are exceeding their quota
+        reporter = MailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
+        for user in ex_users:
+            reporter.report_user(user)
+        reporter.close()
+
+    except CriticalException, err:
+        logger.critical("critical exception caught: %s" % (err.message))
+        nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
+        lockfile.release()
+        sys.exit(1)
+
+    (nagios_exit_code, nagios_message) = nagios_analyse_data(ex_users
+                                                            , ex_vos
+                                                            , user_count=len(mm_rep_quota_map_users.values())
+                                                            , vo_count=len(mm_rep_quota_map_vos.values()))
+    nagios_reporter.cache(nagios_exit_code, nagios_message)
+    lockfile.release()
+
+if __name__ == '__main__':
+    main(sys.argv)
+
