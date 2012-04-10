@@ -275,7 +275,7 @@ def collectgroupsLDAP(indiv):
     Uses LDAP directly
     """
     #setdebugloglevel(False)
-    u = utils.utils()
+    u = utils.FullLdapTools()
 
     ## all sites filter
     ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
