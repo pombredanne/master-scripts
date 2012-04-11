@@ -5,29 +5,37 @@ Collect showq info
 - filter 
 - distribute pickle
 """
-import sys, os, re, grp, pwd, time, cPickle
-realshowq = '/opt/moab/bin/showq'
+import cPickle
+import grp
+import os
+import pwd
+import sys
+import time
 
+realshowq = '/opt/moab/bin/showq'
 voprefix = 'gvo'
+
+import vsc.utils.fs_store as store
 
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
+
 import vsc.fancylogger as fancylogger
+
+logger = fancylogger.getLogger(__name__)
 
 ## need the full utils, not the simple ones
 try:
     from vsc.ldap import utils
 #from vsc.log import setdebugloglevel
 except Exception, err:
-    logger.critical("Can't init utils: %s" % err)
+    logger.critical("Can't init ldap utils: %s" % err)
     sys.exit(1)
 
 realshowq = '/opt/moab/bin/showq'
 
 voprefix = 'gvo'
-
-logger = fancylogger.getLogger(__name__)
 
 ## all default VOs
 defaultvo = 'gvo00012'
@@ -57,10 +65,11 @@ def getinfo(res, host):
 
     return res
 
+
 def writebuffer(owner, data, extra=''):
     """
-    cpickle data to file. 
-    -- enforce strict permisisons 
+    cpickle data to file.
+    -- enforce strict permisisons
     """
     try:
         home = pwd.getpwnam(owner)[5]
@@ -95,17 +104,14 @@ def writebuffer(owner, data, extra=''):
         logger.error("Failed to to pickle %s: %s" % (desttmp, err))
         return
 
-    """
-    Move tmp do real dest
-    """
+    # Move tmp do real dest
     try:
-	if owner == 'root':
-		os.rename(desttmp, dest) # rename file
-		import stat
-        	os.chmod(dest, stat.S_IRUSR) # read-only
-	else:
-		# copy file to desired location, as another user (necessary because of NFS root squash)
-
+        if owner == 'root':
+            os.rename(desttmp, dest) # rename file
+            import stat
+            os.chmod(dest, stat.S_IRUSR) # read-only
+        else:
+            # copy file to desired location, as another user (necessary because of NFS root squash)
             os.chown(desttmp, pwd.getpwnam(owner)[2], pwd.getpwnam(owner)[3]) # restrict access
             cmd = "sudo -u %s chmod 700 %s" % (owner, dest) # make sure destination is writable if it's there
             os.system(cmd)
@@ -121,15 +127,15 @@ def writebuffer(owner, data, extra=''):
 def parseshowqxml(res, host, txt):
     """
     Parse showq --xml output
-    
-    <job AWDuration="3931" Account="gvo00000" Class="short" DRMJID="123456788.master.gengar.gent.vsc" 
-    EEDuration="1278479828" Group="vsc40000" JobID="123456788" JobName="job.sh" MasterHost="node129" 
-    PAL="gengar" ReqAWDuration="7200" ReqProcs="8" RsvStartTime="1278480000" RunPriority="663" 
-    StartPriority="663" StartTime="127848000" StatPSDed="31467.120000" StatPSUtl="3404.405600" 
+
+    <job AWDuration="3931" Account="gvo00000" Class="short" DRMJID="123456788.master.gengar.gent.vsc"
+    EEDuration="1278479828" Group="vsc40000" JobID="123456788" JobName="job.sh" MasterHost="node129"
+    PAL="gengar" ReqAWDuration="7200" ReqProcs="8" RsvStartTime="1278480000" RunPriority="663"
+    StartPriority="663" StartTime="127848000" StatPSDed="31467.120000" StatPSUtl="3404.405600"
     State="Running" SubmissionTime="1278470000" SuspendDuration="0" User="vsc40000">
-    <job Account="gvo00000" BlockReason="IdlePolicy" Class="short" DRMJID="1231456789.master.gengar.gent.vsc" 
-    Description="job 123456789 violates idle HARD MAXIPROC limit of 800 for user vsc40000  (Req: 8  InUse: 800)" 
-    EEDuration="1278486173" Group="vsc40023" JobID="1859934" JobName="job.sh" ReqAWDuration="7200" ReqProcs="8" 
+    <job Account="gvo00000" BlockReason="IdlePolicy" Class="short" DRMJID="1231456789.master.gengar.gent.vsc"
+    Description="job 123456789 violates idle HARD MAXIPROC limit of 800 for user vsc40000  (Req: 8  InUse: 800)"
+    EEDuration="1278486173" Group="vsc40023" JobID="1859934" JobName="job.sh" ReqAWDuration="7200" ReqProcs="8"
     StartPriority="660" StartTime="0" State="Idle" SubmissionTime="1278480000" SuspendDuration="0" User="vsc40000"></job>
     """
     mand = ['ReqProcs', 'SubmissionTime', 'JobID', 'DRMJID', 'Class']
@@ -218,7 +224,8 @@ def getout(host):
             break
     if p.returncode == 0:
         # create backup of out, in case future showq commands fail
-        writebuffer('root', out, '.cluster_%s' % host)
+        #writebuffer('root', out, '.cluster_%s' % host)
+        store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
         return out
     else:
         # try restoring last known out
@@ -253,9 +260,7 @@ def collectgroups(indiv):
             found += group[0][3]
             groups.append(group[0][3])
         else:
-            """
-            If not in VO or default vo, ignore
-            """
+            # If not in VO or default vo, ignore
             if us in defvo:
                 found.append(us)
                 groups.append([us])
@@ -337,9 +342,7 @@ def groupinfoLDAP(users, res):
     return newres
 
 if __name__ == '__main__':
-    """
-    Collect all info
-    """
+    # Collect all info
 
     lockfile = TimestampedPidLockfile('/var/run/dshowq_tpid.lock')
     try:
@@ -368,26 +371,23 @@ if __name__ == '__main__':
             lockfile.release()
             sys.exit(0)
 
-    """
-    Collect all user/VO maps of active users
-    - for all active users, get their VOs
-    - for those groups, get all users
-    - make list of VOs and of individual users (ie default VO)
-    """
+    # Collect all user/VO maps of active users
+    # - for all active users, get their VOs
+    # - for those groups, get all users
+    # - make list of VOs and of individual users (ie default VO)
     activeusers = res.keys()
     groups = collectgroupsLDAP(activeusers)
 
     for group in groups.values():
-        """
-        Filter and pickle results
-        - per VO
-        - per user
-        """
+        # Filter and pickle results
+        # - per VO
+        # - per user
         newres = groupinfoLDAP(group, res)
 
         if newres:
             for us in group:
-                writebuffer(us, (newres, group))
+                #writebuffer(us, (newres, group))
+                store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
