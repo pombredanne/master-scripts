@@ -15,11 +15,13 @@ import time
 realshowq = '/opt/moab/bin/showq'
 voprefix = 'gvo'
 
+VSC_INSTALL_USER_ID = 'vsc40003'
+
 import vsc.utils.fs_store as store
 
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
-
+from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 
 import vsc.fancylogger as fancylogger
 
@@ -225,7 +227,11 @@ def getout(host):
     if p.returncode == 0:
         # create backup of out, in case future showq commands fail
         #writebuffer('root', out, '.cluster_%s' % host)
-        store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
+        try:
+            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
+        except (UserStorageError, FileStoreError, FileMoveError), err:
+            # these should NOT occur, we're root, accessing our own home directory
+            logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
         return out
     else:
         # try restoring last known out
@@ -369,7 +375,7 @@ if __name__ == '__main__':
         if not res:
             logger.error("Couldn't collect info")
             lockfile.release()
-            sys.exit(0)
+            sys.exit(1)
 
     # Collect all user/VO maps of active users
     # - for all active users, get their VOs
@@ -377,6 +383,17 @@ if __name__ == '__main__':
     # - make list of VOs and of individual users (ie default VO)
     activeusers = res.keys()
     groups = collectgroupsLDAP(activeusers)
+
+    # force mounting the home directories for the ghent users
+    # FIXME: this works for the current setup, might be an issue if we change things.
+    #        see ticket #987
+    try:
+        vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
+        cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
+        os.system(cmd)
+    except Exception, err:
+        logger.critical("Cannot stat the VSC install user (%s) home at %s. Bailing." % (VSC_INSTALL_USER_ID, vsc_install_user_home))
+        sys.exit(1)
 
     for group in groups.values():
         # Filter and pickle results
@@ -387,7 +404,11 @@ if __name__ == '__main__':
         if newres:
             for us in group:
                 #writebuffer(us, (newres, group))
-                store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
+                try:
+                    store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
+                except (UserStorageError, FileCopyError, FileMoverError), err:
+                    logger.error('Could not store pickle file for user %s' % (us))
+                    pass # just keep going, trying to store the rest of the data
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
