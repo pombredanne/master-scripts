@@ -387,6 +387,7 @@ if __name__ == '__main__':
     # force mounting the home directories for the ghent users
     # FIXME: this works for the current setup, might be an issue if we change things.
     #        see ticket #987
+    vsc_install_user_home = None
     try:
         vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
         cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
@@ -406,7 +407,7 @@ if __name__ == '__main__':
                 #writebuffer(us, (newres, group))
                 try:
                     store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
-                except (UserStorageError, FileCopyError, FileMoverError), err:
+                except (UserStorageError, FileStoreError, FileMoverError), err:
                     logger.error('Could not store pickle file for user %s' % (us))
                     pass # just keep going, trying to store the rest of the data
 
