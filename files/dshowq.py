@@ -407,7 +407,7 @@ if __name__ == '__main__':
                 #writebuffer(us, (newres, group))
                 try:
                     store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
-                except (UserStorageError, FileStoreError, FileMoverError), err:
+                except (UserStorageError, FileStoreError, FileMoveError), err:
                     logger.error('Could not store pickle file for user %s' % (us))
                     pass # just keep going, trying to store the rest of the data
 
