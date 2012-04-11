@@ -9,7 +9,7 @@
 # This is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation v2.
-'''Script to check for quota transgressions and notify the offending users.
+"""Script to check for quota transgressions and notify the offending users.
 
 - relies on mmrepquota to get a quick estimate of user quota
 - checks all known GPFS mounted file systems
@@ -17,11 +17,13 @@
 Created Mar 8, 2012
 
 @author Andy Georges
-'''
+"""
 
 # author: Andy Georges
 
 import logging
+import os
+import pwd
 import re
 import sys
 
@@ -49,8 +51,10 @@ QUOTA_CHECK_LOG_FILE = '/var/log/quota/gpfs_quota_checker.log'
 QUOTA_CHECK_REMINDER_CACHE_FILENAME = '/var/log/quota/gpfs_quota_checker.report.reminderCache.pickle'
 QUOTA_CHECK_LOCK_FILE = '/var/run/gpfs_quota_checker_tpid.lock'
 
-debug = True
-#debug = False
+VSC_INSTALL_USER_ID = 'vsc40003'
+
+#debug = True
+debug = False
 
 # logger setup
 fancylogger.logToFile(QUOTA_CHECK_LOG_FILE)
@@ -160,7 +164,7 @@ def main(argv):
     try:
         lockfile.acquire()
     except (LockFileReadError, LockFailed), err:
-        logger.critical('Cannot obtain lock, bailing')
+        logger.critical('Cannot obtain lock, bailing %s' % (err))
         nagios_reporter.cache(2, "CRITICAL quota check script failed to obtain lock")
         sys.exit(2)
 
@@ -180,18 +184,29 @@ def main(argv):
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
         logger.info("found %s VOs who are exceeding their quota" % len(ex_vos))
 
+        # force mounting the home directories for the ghent users
+        # FIXME: this works for the current setup, might be an issue if we change things.
+        #        see ticket #987
+        vsc_install_user_home = None
+        try:
+            vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
+            cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
+            os.system(cmd)
+        except Exception, err:
+            raise CriticalException('Cannot stat the VSC install user (%s) home at (%s).' % (VSC_INSTALL_USER_ID, vsc_install_user_home))
+
         # FIXME: cache the storage quota information (test for exceeding users)
         u_storage = UserFsQuotaStorage()
         for user in mm_rep_quota_map_users.values():
             try:
-                r = u_storage.store_quota(user)
+                u_storage.store_quota(user)
             except VscError, err:
                 pass  ## we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
-        vStorage = VoFsQuotaStorage()
-        for v_storage in mm_rep_quota_map_vos.values():
+        v_storage = VoFsQuotaStorage()
+        for vo in mm_rep_quota_map_vos.values():
             try:
-                r = vStorage.store_quota(v_storage)
+                v_storage.store_quota(vo)
             except VscError, err:
                 pass  ## we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
