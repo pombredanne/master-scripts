@@ -68,64 +68,6 @@ def getinfo(res, host):
     return res
 
 
-def writebuffer(owner, data, extra=''):
-    """
-    cpickle data to file.
-    -- enforce strict permisisons
-    """
-    try:
-        home = pwd.getpwnam(owner)[5]
-    except Exception, err:
-        #print "User %s inactive (?): %s"%(owner,err)
-        logger.warning("User %s inactive (?): %s" % (owner, err))
-        return
-    if not os.path.isdir(home):
-        logger.warning("Homedir %s owner %s not found" % (home, owner))
-        return
-
-    fn = ".showq.pickle"
-    dest = os.path.join("%s" % home, "%s%s" % (fn, extra))
-    tmpdir = "/tmp"
-    if owner == 'root':
-       tmpdir = "/root" # we need to use /root here for os.rename to work
-    desttmp = os.path.join(tmpdir, "%s.tmp" % fn)
-    if not os.path.exists(desttmp):
-        try:
-            f = open(desttmp, 'w')
-            f.write('')
-            f.close()
-        except Exception, err:
-            logger.error("Failed to write to temporary destination %s: %s" % (desttmp, err))
-            return
-
-    try:
-        f = open(desttmp, 'w')
-        cPickle.dump(data, f)
-        f.close()
-    except Exception, err:
-        logger.error("Failed to to pickle %s: %s" % (desttmp, err))
-        return
-
-    # Move tmp do real dest
-    try:
-        if owner == 'root':
-            os.rename(desttmp, dest) # rename file
-            import stat
-            os.chmod(dest, stat.S_IRUSR) # read-only
-        else:
-            # copy file to desired location, as another user (necessary because of NFS root squash)
-            os.chown(desttmp, pwd.getpwnam(owner)[2], pwd.getpwnam(owner)[3]) # restrict access
-            cmd = "sudo -u %s chmod 700 %s" % (owner, dest) # make sure destination is writable if it's there
-            os.system(cmd)
-            cmd = "sudo -u %s cp %s %s" % (owner, desttmp, dest) # copy new file
-            os.system(cmd)
-            cmd = "sudo -u %s chmod 400 %s" % (owner, dest) # change to read-only
-            os.system(cmd)
-            os.remove(desttmp) # get rid of tmp file
-    except Exception, err:
-        logger.error("Failed to move tmp file %s to real dest %s: %s" % (desttmp, dest, err))
-        return
-
 def parseshowqxml(res, host, txt):
     """
     Parse showq --xml output
@@ -193,6 +135,7 @@ def parseshowqxml(res, host, txt):
 
     return res
 
+
 def getout(host):
     if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio"]:
         if host == "gengar":
@@ -226,7 +169,6 @@ def getout(host):
             break
     if p.returncode == 0:
         # create backup of out, in case future showq commands fail
-        #writebuffer('root', out, '.cluster_%s' % host)
         try:
             store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
         except (UserStorageError, FileStoreError, FileMoveError), err:
@@ -404,7 +346,6 @@ if __name__ == '__main__':
 
         if newres:
             for us in group:
-                #writebuffer(us, (newres, group))
                 try:
                     store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
                 except (UserStorageError, FileStoreError, FileMoveError), err:
