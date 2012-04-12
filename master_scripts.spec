@@ -3,7 +3,7 @@
 
 Summary: UGent HPC scripts that should be deployed on the masters
 Name: master_scripts
-Version: 0.2.2
+Version: 0.2.3
 Release: 1
 License: GPL
 Group: Applications/System
