@@ -218,6 +218,7 @@ def main(argv):
             try:
                 u_storage.store_quota(user)
             except VscError, err:
+                logger.error("Could not store data for user %s" % (user))
                 pass  ## we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
         v_storage = VoFsQuotaStorage()
@@ -225,6 +226,7 @@ def main(argv):
             try:
                 v_storage.store_quota(vo)
             except VscError, err:
+                logger.error("Could not store vo data for user %s" % (user))
                 pass  ## we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
         # Report to the users who are exceeding their quota
