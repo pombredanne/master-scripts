@@ -68,6 +68,21 @@ opt_parser = OptionParser()
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 
+def __nub(list):
+    """Returns the unique items of a list.
+
+    Code is taken from
+    http://stackoverflow.com/questions/480214/how-do-you-remove-duplicates-from-a-list-in-python-whilst-preserving-order
+
+    @type list: a list :-)
+
+    @returns: a new list with each element from `list` appearing only once (cfr. Michelle Dubois).
+    """
+    seen = set()
+    seen_add = seen.add
+    return [ x for x in list if x not in seen and not seen_add(x)]
+
+
 def get_gpfs_mount_points():
     '''Find out which devices are mounted under GPFS.'''
     source = '/proc/mounts'
@@ -79,12 +94,14 @@ def get_gpfs_mount_points():
         if r:
             (dev, _) = r.groups()
             ms.append(dev)
+    ms = __nub(ms)
     if ms == []:
         logger.critical('no devices found that are mounted under GPFS')
         raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
     ## The following needs to be hardcoded
     if '/dev/home/' not in ms:
         ms.append('/dev/home')
+    logger.info('Found GPFS mounted entries: %s' % (ms))
     return ms
 
 
