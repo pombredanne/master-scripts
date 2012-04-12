@@ -99,7 +99,7 @@ def get_gpfs_mount_points():
         logger.critical('no devices found that are mounted under GPFS')
         raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
     ## The following needs to be hardcoded
-    if '/dev/home/' not in ms:
+    if '/dev/home' not in ms:
         ms.append('/dev/home')
     logger.info('Found GPFS mounted entries: %s' % (ms))
     return ms
