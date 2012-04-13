@@ -12,10 +12,7 @@ import pwd
 import sys
 import time
 
-realshowq = '/opt/moab/bin/showq'
-voprefix = 'gvo'
 
-VSC_INSTALL_USER_ID = 'vsc40003'
 
 import vsc.utils.fs_store as store
 
@@ -26,7 +23,7 @@ from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 import vsc.fancylogger as fancylogger
 
 logger = fancylogger.getLogger(__name__)
-
+fancylogger.setLogLevel(logging.INFO)
 ## need the full utils, not the simple ones
 try:
     from vsc.ldap import utils
@@ -36,8 +33,9 @@ except Exception, err:
     sys.exit(1)
 
 realshowq = '/opt/moab/bin/showq'
-
 voprefix = 'gvo'
+
+VSC_INSTALL_USER_ID = 'vsc40003'
 
 ## all default VOs
 defaultvo = 'gvo00012'
