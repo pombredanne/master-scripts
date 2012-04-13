@@ -7,6 +7,7 @@ Collect showq info
 """
 import cPickle
 import grp
+import logging
 import os
 import pwd
 import sys
