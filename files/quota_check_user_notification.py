@@ -137,7 +137,7 @@ def get_mmrepquota_maps(devices, user_id_map):
             ## the backend expects user names
             ## getpwuid should be using the ncd cache for the LDAP info,
             ## so this should not hurt the system much
-            user_info = user_id_map and user_id_map[uId] or pwd.getpwuid(uId)
+            user_info = user_id_map and user_id_map[uId] or pwd.getpwuid(uId) ## backup
             user_name = user_info[0]
             user = user_map.get(user_name, User(user_name))
             user.update_quota(device, used, soft, hard, doubt, expired, ts)
