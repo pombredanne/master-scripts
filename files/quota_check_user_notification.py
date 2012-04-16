@@ -51,7 +51,7 @@ QUOTA_CHECK_LOG_FILE = '/var/log/quota/gpfs_quota_checker.log'
 QUOTA_CHECK_REMINDER_CACHE_FILENAME = '/var/log/quota/gpfs_quota_checker.report.reminderCache.pickle'
 QUOTA_CHECK_LOCK_FILE = '/var/run/gpfs_quota_checker_tpid.lock'
 
-VSC_INSTALL_USER_ID = 'vsc40003'
+VSC_INSTALL_USER_NAME = 'vsc40003'
 
 #debug = True
 debug = False
@@ -118,10 +118,11 @@ def get_mmrepquota_maps(devices):
     for device in devices:
 
         mmfs = MMRepQuota(device)
-        mmfs_output_lines = mmfs.execute()
+        mmfs_output_lines_user = mmfs.execute_user()
+        mmfs_output_lines_vo = mmfs.execute_fileset()
 
-        uM = mmfs.parse_user_quota_lines(mmfs_output_lines, timestamp=True)
-        fM = mmfs.parse_vo_quota_lines(mmfs_output_lines, timestamp=True)
+        uM = mmfs.parse_user_quota_lines(mmfs_output_lines_user, timestamp=True)
+        fM = mmfs.parse_vo_quota_lines(mmfs_output_lines_vo, timestamp=True)
 
         if uM is None:
             logger.critical("could not obtain quota information for users for device %s" % (device))
@@ -131,11 +132,19 @@ def get_mmrepquota_maps(devices):
             #raise CriticalException("could not gather vo data from mmrepquota for device %s" % (device))
 
         for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
-            user = user_map.get(uId, User(uId))
+            ## we get back the user IDs, not user names, since the GPFS tools
+            ## circumvent LDAP's ncd caching mechanism.
+            ## the backend expects user names
+            ## getpwuid should be using the ncd cache for the LDAP info,
+            ## so this should not hurt the system much
+            user_info = pwd.getpwuid(uId)
+            user_name = user_info[0]
+            user = user_map.get(user_name, User(user_name))
             user.update_quota(device, used, soft, hard, doubt, expired, ts)
-            user_map[uId] = user
+            user_map[user_name] = user
 
         for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
+            ## here, we have the VO names, as per the GPFS configuration
             vo = vo_map.get(vId, VO(vId))
             vo.update_quota(device, used, soft, hard, doubt, expired, ts)
             vo_map[vId] = vo
@@ -206,11 +215,11 @@ def main(argv):
         #        see ticket #987
         vsc_install_user_home = None
         try:
-            vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
-            cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
+            vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_NAME)[5]
+            cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_NAME, vsc_install_user_home)
             os.system(cmd)
         except Exception, err:
-            raise CriticalException('Cannot stat the VSC install user (%s) home at (%s).' % (VSC_INSTALL_USER_ID, vsc_install_user_home))
+            raise CriticalException('Cannot stat the VSC install user (%s) home at (%s).' % (VSC_INSTALL_USER_NAME, vsc_install_user_home))
 
         # FIXME: cache the storage quota information (test for exceeding users)
         u_storage = UserFsQuotaStorage()
