@@ -105,13 +105,13 @@ def get_gpfs_mount_points():
     return ms
 
 
-def get_mmrepquota_maps(devices):
-    '''Run the mmrepquota command and parse all data into user and VO maps.
+def get_mmrepquota_maps(devices, user_id_map):
+    """Run the mmrepquota command and parse all data into user and VO maps.
 
     @type devices: [ String ]
 
     Returns (user dictionary, vo dictionary).
-    '''
+    """
     user_map = {}
     vo_map = {}
 
@@ -137,7 +137,7 @@ def get_mmrepquota_maps(devices):
             ## the backend expects user names
             ## getpwuid should be using the ncd cache for the LDAP info,
             ## so this should not hurt the system much
-            user_info = pwd.getpwuid(uId)
+            user_info = user_id_map and user_id_map[uId] or pwd.getpwuid(uId)
             user_name = user_info[0]
             user = user_map.get(user_name, User(user_name))
             user.update_quota(device, used, soft, hard, doubt, expired, ts)
@@ -174,6 +174,15 @@ def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
         return (NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING quota exceeded | ex_u=%d ex_v=%d pU=%f pV=%f" % (ex_u, ex_v, pU, pV))
 
 
+def map_uids_to_names():
+    """Determine the mapping between user ids and user names."""
+    ul = pwd.getpwall()
+    d = {}
+    for u in ul:
+        d[u[2]] = u[0]
+    return d
+
+
 def main(argv):
 
     (opts, args) = opt_parser.parse_args(argv)
@@ -196,7 +205,8 @@ def main(argv):
 
     try:
         mount_points = get_gpfs_mount_points()
-        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points)
+        user_id_map = map_uids_to_names()
+        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points, user_id_map)
 
         if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
             raise CriticalException('no usable data was found in the mmrepquota output')
