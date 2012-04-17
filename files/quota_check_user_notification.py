@@ -127,28 +127,37 @@ def get_mmrepquota_maps(devices, user_id_map):
         if uM is None:
             logger.critical("could not obtain quota information for users for device %s" % (device))
             #raise CriticalException("could not gather user data from mmrepquota for device %s" % (device))
+        else:
+            for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
+                ## we get back the user IDs, not user names, since the GPFS tools
+                ## circumvent LDAP's ncd caching mechanism.
+                ## the backend expects user names
+                ## getpwuid should be using the ncd cache for the LDAP info,
+                ## so this should not hurt the system much
+		uId = int(uId)
+                user_name = None
+                if user_id_map and user_id_map.has_key(uId):
+                    user_name = user_id_map[uId]
+                else:
+                    try:
+                        user_name = pwd.getpwuid(uId)[0] ## backup
+                    except Exception, err:
+                        pass
+                if user_name and user_name.startswith("vsc"):
+                    user = user_map.get(user_name, User(user_name))
+                    user.update_quota(device, used, soft, hard, doubt, expired, ts)
+                    user_map[user_name] = user
+
         if fM is None:
             logger.critical("could not obtain quota information for VOs for device %s" % (device))
             #raise CriticalException("could not gather vo data from mmrepquota for device %s" % (device))
-
-        for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
-            ## we get back the user IDs, not user names, since the GPFS tools
-            ## circumvent LDAP's ncd caching mechanism.
-            ## the backend expects user names
-            ## getpwuid should be using the ncd cache for the LDAP info,
-            ## so this should not hurt the system much
-            user_info = user_id_map and user_id_map[uId] or pwd.getpwuid(uId) ## backup
-            user_name = user_info[0]
-            user = user_map.get(user_name, User(user_name))
-            user.update_quota(device, used, soft, hard, doubt, expired, ts)
-            user_map[user_name] = user
-
-        for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
-            ## here, we have the VO names, as per the GPFS configuration
-            vo = vo_map.get(vId, VO(vId))
-            vo.update_quota(device, used, soft, hard, doubt, expired, ts)
-            vo_map[vId] = vo
-
+        else:
+            for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
+                ## here, we have the VO names, as per the GPFS configuration
+                vo = vo_map.get(vId, VO(vId))
+                vo.update_quota(device, used, soft, hard, doubt, expired, ts)
+                vo_map[vId] = vo
+    
     return (user_map, vo_map)
 
 
