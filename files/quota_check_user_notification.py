@@ -223,12 +223,12 @@ def main(argv):
 
         ## figure out which users are crossing their softlimits
         ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
-        logger.info("found %s users who are exceeding their quota: %s" % len(ex_users, [u.vsc_id for u in ex_users]))
+        logger.info("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
 
         ## figure out which VO's are exceeding their softlimits
         ## currently, we're not using this, VO's should have plenty of space
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
-        logger.info("found %s VOs who are exceeding their quota: %s" % len(ex_vos, [v.vo_id for v in ex_vos]))
+        logger.info("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
 
         # force mounting the home directories for the ghent users
         # FIXME: this works for the current setup, might be an issue if we change things.
@@ -247,7 +247,7 @@ def main(argv):
             try:
                 u_storage.store_quota(user)
             except VscError, err:
-                logger.error("Could not store data for user %s" % (user))
+                logger.error("Could not store data for user %s" % (user.vsc_id))
                 pass  ## we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
         v_storage = VoFsQuotaStorage()
@@ -255,7 +255,7 @@ def main(argv):
             try:
                 v_storage.store_quota(vo)
             except VscError, err:
-                logger.error("Could not store vo data for user %s" % (user))
+                logger.error("Could not store vo data for vo %s" % (vo.vo_id))
                 pass  ## we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
         # Report to the users who are exceeding their quota
