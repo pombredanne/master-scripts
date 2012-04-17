@@ -223,12 +223,12 @@ def main(argv):
 
         ## figure out which users are crossing their softlimits
         ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
-        logger.info("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
+        logger.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
 
         ## figure out which VO's are exceeding their softlimits
         ## currently, we're not using this, VO's should have plenty of space
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
-        logger.info("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
+        logger.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
 
         # force mounting the home directories for the ghent users
         # FIXME: this works for the current setup, might be an issue if we change things.
