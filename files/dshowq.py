@@ -227,14 +227,14 @@ def collectgroupsLDAP(indiv):
     Uses LDAP directly
     """
     #setdebugloglevel(False)
-    u = utils.utils()
+    u = utils.LdapQuery()
 
     ## all sites filter
     ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
 
     userMapsPerVo = {}
-    vos = u.vo_search(filter=ldapf, attrs=['cn', 'description', 'institute', 'memberUid'])
-    members = u.user_search(filter=ldapf, attrs=['institute', 'uid', 'gecos', 'cn'])
+    vos = u.vo_filter_search(filter=ldapf, attributes=['cn', 'description', 'institute', 'memberUid'])
+    members = u.user_filter_search(filter=ldapf, attributes=['institute', 'uid', 'gecos', 'cn'])
     found = []
     for us in indiv:
         if us in found: continue
