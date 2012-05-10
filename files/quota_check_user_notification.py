@@ -95,7 +95,7 @@ def get_gpfs_mount_points():
             (dev, _) = r.groups()
             ms.append(dev)
     ms = __nub(ms)
-    if ms == []:
+    if not ms:
         logger.critical('no devices found that are mounted under GPFS')
         raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
     ## The following needs to be hardcoded
