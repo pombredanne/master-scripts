@@ -33,7 +33,7 @@ except Exception, err:
     logger.critical("Can't init ldap utils: %s" % err)
     sys.exit(1)
 
-realshowq = '/opt/moab/bin/showq'
+realshowq = '/usr/bin/showq'
 voprefix = 'gvo'
 
 VSC_INSTALL_USER_ID = 'vsc40003'
@@ -314,9 +314,11 @@ if __name__ == '__main__':
         oldres = res
         res = getinfo(res, host)
         if not res:
-            logger.error("Couldn't collect info")
-            lockfile.release()
-            sys.exit(1)
+            logger.error("Couldn't collect info for host %s" % (host))
+            res = oldres
+            continue
+            #lockfile.release()
+            #sys.exit(1)
 
     # Collect all user/VO maps of active users
     # - for all active users, get their VOs
