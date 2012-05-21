@@ -144,11 +144,13 @@ def getout(host):
         if host == "haunter":
             exe = "%s --xml --host=master5.haunter.gent.vsc" % (realshowq)
         if host == "gulpin":
-            #exe="%s --xml --host=master9.gulpin.gent.vsc"%(realshowq)
-            exe = "ssh master9.gulpin.gent.vsc /root/showq_to_xml.sh"
+            exe="%s --xml --host=master9.gulpin.gent.vsc"%(realshowq)
+            # maui workaround:
+            # exe = "ssh master9.gulpin.gent.vsc /root/showq_to_xml.sh"
         if host == "dugtrio":
-            #exe="%s --xml --host=master11.dugtrio.gent.vsc"%(realshowq)
-            exe = "ssh master11.dugtrio.gent.vsc /root/showq_to_xml.sh"
+            exe="%s --xml --host=master11.dugtrio.gent.vsc"%(realshowq)
+            # maui workaround:
+            # exe = "ssh master11.dugtrio.gent.vsc /root/showq_to_xml.sh"
     else:
         if not host:
             exe = "%s --xml" % realshowq
@@ -176,7 +178,7 @@ def getout(host):
             logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
         return out
     else:
-        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files" % (exe))
+        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files: %s" % (exe, err))
         # try restoring last known out
         home = pwd.getpwnam('root')[5]
         if not os.path.isdir(home):
