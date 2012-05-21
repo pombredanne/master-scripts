@@ -167,6 +167,7 @@ def getout(host):
         except:
             break
     if p.returncode == 0:
+        logger.info("Subprocess %s ran OK, storing resulting data in pickle files" % (exe))
         # create backup of out, in case future showq commands fail
         try:
             store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
@@ -175,6 +176,7 @@ def getout(host):
             logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
         return out
     else:
+        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files" % (exe))
         # try restoring last known out
         home = pwd.getpwnam('root')[5]
         if not os.path.isdir(home):
