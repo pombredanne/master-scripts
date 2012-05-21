@@ -84,7 +84,7 @@ def __nub(list):
 
 
 def get_gpfs_mount_points():
-    '''Find out which devices are mounted under GPFS.'''
+    """Find out which devices are mounted under GPFS."""
     source = '/proc/mounts'
     reg_mount = re.compile(r"^(?P<dev>\S+)\s+(?P<mntpt>\S+)\s+gpfs")
     f = file(source, 'r')
@@ -162,7 +162,7 @@ def get_mmrepquota_maps(devices, user_id_map):
 
 
 def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
-    '''Analyse the data blobs we gathered and build a summary for nagios.
+    """Analyse the data blobs we gathered and build a summary for nagios.
 
     @type ex_users: [ quota.entities.User ]
     @type ex_vos: [ quota.entities.VO ]
@@ -172,7 +172,7 @@ def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
     Returns a tuple with two elements:
         - the exit code to be provided when the script runs as a nagios check
         - the message to be printed when the script runs as a nagios check
-    '''
+    """
     ex_u = len(ex_users)
     ex_v = len(ex_vos)
     if ex_u == 0 and ex_v == 0:
@@ -262,11 +262,16 @@ def main(argv):
         reporter = MailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
         for user in ex_users:
             reporter.report_user(user)
+        logger.info("Done reporting users.")
         reporter.close()
 
     except CriticalException, err:
         logger.critical("critical exception caught: %s" % (err.message))
         nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
+        lockfile.release()
+        sys.exit(1)
+    except Exception, err:
+        logger.critical("exception caught: %s" % (err))
         lockfile.release()
         sys.exit(1)
 
