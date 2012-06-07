@@ -39,7 +39,8 @@ from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileRea
 from vsc.gpfs.quota.mmfs_utils import MMRepQuota
 from vsc.gpfs.quota.entities import User, VO
 from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
-from vsc.gpfs.quota.report import MailReporter, NagiosReporter
+from vsc.gpfs.quota.report import MailReporter
+from vsc.utils.nagios import NagiosReporter
 from vsc.gpfs.utils.exceptions import CriticalException
 
 ## Constants
