@@ -13,11 +13,10 @@ import pwd
 import sys
 import time
 
-
-
 import vsc.utils.fs_store as store
 
 from lockfile import LockFailed, NotLocked, NotMyLock
+from vsc.utils.nagios import NagiosReporter
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 
@@ -28,10 +27,24 @@ fancylogger.setLogLevel(logging.INFO)
 ## need the full utils, not the simple ones
 try:
     from vsc.ldap import utils
-#from vsc.log import setdebugloglevel
 except Exception, err:
     logger.critical("Can't init ldap utils: %s" % err)
     sys.exit(1)
+
+from optparse import OptionParser
+
+#Constants
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
+NAGIOS_HEADER = 'dshowq'
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  ## 15 minutes
+# HostsReported HostsUnavailable UserCount UserNoStorePossible
+NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
+
+
+DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
+
+opt_parser = OptionParser()
+opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 realshowq = '/usr/bin/showq'
 voprefix = 'gvo'
@@ -138,7 +151,7 @@ def parseshowqxml(res, host, txt):
 def getout(host):
     if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio"]:
         if host == "gengar":
-            exe = "%s --xml --host=master.gengar.gent.vsc" % (realshowq)
+            exe = "%s --xml --host=master2.gengar.gent.vsc" % (realshowq)
         if host == "gastly":
             exe = "%s --xml --host=master3.gastly.gent.vsc" % (realshowq)
         if host == "haunter":
@@ -292,19 +305,30 @@ def groupinfoLDAP(users, res):
     newres['timeinfo'] = res['timeinfo']
     return newres
 
+
 if __name__ == '__main__':
     # Collect all info
 
-    lockfile = TimestampedPidLockfile('/var/run/dshowq_tpid.lock')
+    (opts, args) = opt_parser.parse_args(argv)
+    nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
+    if opts.nagios:
+        nagios_reporter.report_and_exit()
+        sys.exit(0)  # not reached
+
+    lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
     try:
         lockfile.acquire()
     except LockFailed, err:
         logger.critical('Unable to obtain lock: lock failed')
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - script failed taking lock %s" % (DSHOWQ_LOCK_FILE))
         sys.exit(1)
     except LockFileReadError, err:
-        logger.critical("Unable to obtain lock: could not read previous lock file /var/run/dshowq_tpid.lock")
+        logger.critical("Unable to obtain lock: could not read previous lock file %s" % (DSHOWQ_LOCK_FILE))
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE))
         sys.exit(1)
 
+    failed_hosts = []
+    reported_hosts = []
 
     tf = "%Y-%m-%d %H:%M:%S"
 
@@ -319,8 +343,11 @@ if __name__ == '__main__':
         res = getinfo(res, host)
         if not res:
             logger.error("Couldn't collect info for host %s" % (host))
+            failed_hosts.append(host)
             res = oldres
             continue
+        else:
+            reported_hosts.append(host)
             #lockfile.release()
             #sys.exit(1)
 
@@ -341,8 +368,11 @@ if __name__ == '__main__':
         os.system(cmd)
     except Exception, err:
         logger.critical("Cannot stat the VSC install user (%s) home at %s. Bailing." % (VSC_INSTALL_USER_ID, vsc_install_user_home))
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - cannot install home for user: %s" % (vsc_install_user_home))
         sys.exit(1)
 
+    nagios_user_count = 0
+    nagios_no_store = 0
     for group in groups.values():
         # Filter and pickle results
         # - per VO
@@ -353,8 +383,10 @@ if __name__ == '__main__':
             for us in group:
                 try:
                     store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
+                    nagios_user_count += 1
                 except (UserStorageError, FileStoreError, FileMoveError), err:
                     logger.error('Could not store pickle file for user %s' % (us))
+                    nagios_no_store += 1
                     pass # just keep going, trying to store the rest of the data
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
@@ -363,5 +395,13 @@ if __name__ == '__main__':
         lockfile.release()
     except NotLocked, err:
         logger.critical('Lock release failed: was not locked.')
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not locked) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+        sys.exit(1)
     except NotMyLock, err:
         logger.error('Lock release failed: not my lock')
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not my lock) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+        sys.exit(1)
+
+    nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+    sys.exit(0)
+
