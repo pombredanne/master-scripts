@@ -402,6 +402,6 @@ if __name__ == '__main__':
         nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not my lock) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
         sys.exit(1)
 
-    nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+    nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (len(failed_hosts), len(reported_hosts), len(nagios_user_count), len(nagios_no_store))))
     sys.exit(0)
 
