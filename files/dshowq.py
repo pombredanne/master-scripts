@@ -309,7 +309,7 @@ def groupinfoLDAP(users, res):
 if __name__ == '__main__':
     # Collect all info
 
-    (opts, args) = opt_parser.parse_args(argv)
+    (opts, args) = opt_parser.parse_args(sys.argv)
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
     if opts.nagios:
         nagios_reporter.report_and_exit()
