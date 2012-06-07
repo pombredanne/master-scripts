@@ -43,7 +43,7 @@ from vsc.gpfs.quota.report import MailReporter, NagiosReporter
 from vsc.gpfs.utils.exceptions import CriticalException
 
 ## Constants
-NAGIOS_CHECK_FILENAME = '/var/log/quota/gpfs_quota_checker.nagios.pickle'
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/gpfs_quota_checker.nagios.pickle'
 NAGIOS_HEADER = 'quota_check'
 NAGIOS_CHECK_INTERVAL_THRESHOLD = 30 * 60  ## 30 minutes
 

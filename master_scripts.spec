@@ -3,7 +3,7 @@
 
 Summary: UGent HPC scripts that should be deployed on the masters
 Name: master_scripts
-Version: 0.2.10
+Version: 0.2.11
 Release: 1
 License: GPL
 Group: Applications/System
@@ -47,6 +47,9 @@ rm -rf %{buildroot}
 %ghost %{_bindir}/dshowq.pyo
 
 %changelog
+* Wed May 06 2012 Andy Georges <andy.georges@ugent.be>
+- Using a NagiosReporter for allwoing nagios checks
+- All nagios check pickle files should be in the same location (e.g., /var/log/nagios/)
 * Thu Apr 05 2012 Andy Georges <andy.georges@ugent.be>
 - Moved to master_scripts.
 * Tue Mar 20 2012 Andy Georges <andy.georges@ugent.be>
