@@ -100,7 +100,6 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
 
     @returns: list of jobs that have been removed
     """
-    time = time.time()
     uids = [u.uid for u in grace_users]
     uids.extend([u.uid for u in inactive_users])
 
@@ -109,7 +108,6 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
         user_id = jobs[job_name]['euser'][0]
         if user_id in uids:
             jobs_to_remove.append((job_name, job))
-
 
     if not dry_run:
         pass
@@ -130,7 +128,6 @@ def print_report(queued_jobs, running_jobs):
     print "pbs_check_active_user_jobs report"
     print "---------------------------------\n\n"
 
-
     print "Queued jobs that will be removed"
     print "--------------------------------"
     print "\n".join(["User {user_name} queued job at {queue_time} with name {job_name}".format(user_name=job['euser'],
@@ -142,7 +139,7 @@ def print_report(queued_jobs, running_jobs):
     print "Running jobs that will be killed"
     print "--------------------------------"
     print "\n".join(["User {user_name} has a started job at {start_time} with name {job_name}".format(user_name=job['euser'],
-                                                                                                      start_time=job['start_time']
+                                                                                                      start_time=job['start_time'],
                                                                                                       job_name=job_name)
                      for (job_name, job) in running_jobs])
 
@@ -172,7 +169,6 @@ def main(args):
     remove_running_jobs(inactive_users, options.dry_run)
 
 
-
-if __name__ == '__main__:
+if __name__ == '__main__':
     main(sys.argv[1:])
 
