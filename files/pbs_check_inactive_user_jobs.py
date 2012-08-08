@@ -111,6 +111,9 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
         if user_id in uids:
             jobs_to_remove.append((job_name, job))
 
+    logger.info("Found {queued_count} queued jobs belonging to gracing or inactive users".format(queued_count=len(jobs_to_remove)))
+    logger.debug("These are the jobs names: {job_names}".format(job_names=map(lambda (n, _): n, jobs_to_remove)))
+
     if not dry_run:
         pass
 
