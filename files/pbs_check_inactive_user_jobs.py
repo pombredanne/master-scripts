@@ -189,7 +189,7 @@ LDAP replica on {master} at {time}.
 
 Kind regards,
 Your friendly pbs job checking script
-""".format(time=time.ctime(), message_queued_jobs=message_queued_jobs, message_running_jobs=message_running_jobs)
+""".format(master=socket.gethostname(), time=time.ctime(), message_queued_jobs=message_queued_jobs, message_running_jobs=message_running_jobs)
 
     try:
         logger.info("Sending report mail to %s" % (mail_to))
