@@ -225,7 +225,7 @@ def main(args):
     pbs_query = PBSQuery()
 
     t = time.ctime()
-    jobs = pbs_query.get_jobs()  # we just get them all
+    jobs = pbs_query.getjobs()  # we just get them all
 
     removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, options.dry_run)
     removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
