@@ -26,6 +26,7 @@ This script is running on the masters, which are at Python 2.6.x.
 
 # --------------------------------------------------------------------
 import logging
+import socket
 import sys
 import time
 from collections import namedtuple
