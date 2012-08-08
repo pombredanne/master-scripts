@@ -46,7 +46,7 @@ fancylogger.setLogLevel(logging.DEBUG)
 logger = fancylogger.getLogger(name='sync_inactive_users')
 
 
-LDAPUser = namedtuple('LDAPUser', ['uid', 'status', 'gecos'])
+LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
 
 
 def get_status_users(ldap, status):
@@ -60,9 +60,9 @@ def get_status_users(ldap, status):
     logger.info("Retrieving users from the HPC LDAP with status=%s." % (status))
 
     users = ldap.user_filter_search(filter="status=%s" % status,
-                                    attributes=['cn', 'status', 'gecos'])
+                                    attributes=['cn', 'status'])
 
-    logger.info("Found %d users in the %s state." % (len(users)))
+    logger.info("Found %d users in the %s state." % (len(users), status))
     logger.debug("The following users are in the %s state: %s" % (status, users))
 
     return map(LDAPUser._make, users)
