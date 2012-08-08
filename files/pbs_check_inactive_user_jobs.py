@@ -117,7 +117,7 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
     return jobs_to_remove
 
 
-def remove_running_jobs(inactive_users, dry_run=True):
+def remove_running_jobs(jobs, inactive_users, dry_run=True):
     """Determine the jobs that are currently running that should be removed due to owners being in grace or inactive state.
 
     FIXME: At this point there is no actual removal.
