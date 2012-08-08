@@ -100,7 +100,6 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
 
     @returns: list of jobs that have been removed
     """
-    time = time.time()
     uids = [u.uid for u in grace_users]
     uids.extend([u.uid for u in inactive_users])
 
@@ -109,7 +108,6 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
         user_id = jobs[job_name]['euser'][0]
         if user_id in uids:
             jobs_to_remove.append((job_name, job))
-
 
     if not dry_run:
         pass
