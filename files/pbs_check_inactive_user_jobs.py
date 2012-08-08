@@ -43,7 +43,7 @@ fancylogger.setLogLevel(logging.DEBUG)
 logger = fancylogger.getLogger(name='sync_inactive_users')
 
 
-LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
+LDAPUser = namedtuple('LDAPUser', ['uid', 'state'])
 
 
 def get_status_users(ldap, status):
@@ -54,15 +54,15 @@ def get_status_users(ldap, status):
 
     @returns: list of LDAPUser nametuples of matching users.
     """
-    logger.info("Retrieving users from the HPC LDAP with status=%s." % (status))
+    logger.info("Retrieving users from the HPC LDAP with state=%s." % (status))
 
     users = ldap.user_filter_search(filter="status=%s" % status,
                                     attributes=['cn', 'status'])
 
-    logger.info("Found %d users in the %s state." % (len(users)))
+    logger.info("Found %d users in the %s state." % (len(users), str(status)))
     logger.debug("The following users are in the %s state: %s" % (status, users))
 
-    return users
+    return map(LDAPUser._make, users)
 
 
 def get_grace_users(ldap):
@@ -142,7 +142,7 @@ def print_report(queued_jobs, running_jobs):
     print "Running jobs that will be killed"
     print "--------------------------------"
     print "\n".join(["User {user_name} has a started job at {start_time} with name {job_name}".format(user_name=job['euser'],
-                                                                                                      start_time=job['start_time']
+                                                                                                      start_time=job['start_time'],
                                                                                                       job_name=job_name)
                      for (job_name, job) in running_jobs])
 
@@ -173,6 +173,6 @@ def main(args):
 
 
 
-if __name__ == '__main__:
+if __name__ == '__main__':
     main(sys.argv[1:])
 
