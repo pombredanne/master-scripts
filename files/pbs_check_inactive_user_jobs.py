@@ -39,15 +39,22 @@ from PBSQuery import PBSQuery
 import vsc.fancylogger as fancylogger
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
+from vsc.utils.nagios import NagiosReporter
 
 
-fancylogger.logToFile('/var/log/hpc_sync_ldap_collector.log')
+fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
 fancylogger.setLogLevel(logging.DEBUG)
 
 logger = fancylogger.getLogger(name='sync_inactive_users')
 
 
 LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
+
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/pbs_check_inactive_user_jobs.nagios.pickle'
+NAGIOS_HEADER = 'pbs_check_inactive_user_jobs'
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 60 * 60  # 60 minutes
+
+PBS_CHECK_LOG_FILE = '/var/log/pbs_check_inactive_user_jobs.log'
 
 
 def get_status_users(ldap, status):
@@ -137,19 +144,19 @@ def print_report(queued_jobs, running_jobs):
     @type queued_jobs: list of queued job tuples (name, PBS job entry)
     @type running_jobs: list of running job tuples (name, PBS job entry)
     """
-    print "pbs_check_active_user_jobs report"
-    print "---------------------------------\n\n"
+    print 'pbs_check_active_user_jobs report'
+    print '---------------------------------\n\n'
 
-    print "Queued jobs that will be removed"
-    print "--------------------------------"
+    print 'Queued jobs that will be removed'
+    print '--------------------------------'
     print "\n".join(["User {user_name} queued job at {queue_time} with name {job_name}".format(user_name=job['euser'][0],
                                                                                                queue_time=job['qtime'][0],
                                                                                                job_name=job_name)
                      for (job_name, job) in queued_jobs])
 
-    print "\n"
-    print "Running jobs that will be killed"
-    print "--------------------------------"
+    print '\n'
+    print 'Running jobs that will be killed'
+    print '--------------------------------'
     print "\n".join(["User {user_name} has a started job at {start_time} with name {job_name}".format(user_name=job['euser'][0],
                                                                                                       start_time=job['start_time'][0],
                                                                                                       job_name=job_name)
@@ -164,19 +171,19 @@ def mail_report(t, queued_jobs, running_jobs):
     @type running_jobs: list of running job tuples (name, PBS job entry)
     """
 
-    message_queued_jobs = "\n".join(["Queued jobs belonging to gracing or inactive users", 50 * "-"] +
+    message_queued_jobs = '\n'.join(['Queued jobs belonging to gracing or inactive users', 50 * '-'] +
                                     ["{user_name} - {job_name} queued at {queue_time}".format(user_name=job['euser'][0],
                                                                                               queue_time=job['qtime'][0],
                                                                                               job_name=job_name)
                                      for (job_name, job) in queued_jobs])
 
-    message_running_jobs = "\n".join(["Running jobs belonging to inactive users", 4 * "-"] +
+    message_running_jobs = '\n'.join(['Running jobs belonging to inactive users', 40 * '-'] +
                                      ["{user_name} - {job_name} running on {nodes}".format(user_name=job['euser'][0],
                                                                                            job_name=job_name,
                                                                                            nodes=str(job['exec_host']))
                                       for (job_name, job) in running_jobs])
 
-    mail_to = "hpc-admin@lists.ugent.be"
+    mail_to = 'hpc-admin@lists.ugent.be'
     mail = VscMail()
 
     message = """Dear admins,
@@ -195,9 +202,9 @@ Your friendly pbs job checking script
     try:
         logger.info("Sending report mail to %s" % (mail_to))
         mail.sendTextMail(mail_to=mail_to,
-                          mail_from="HPC-user-admin@ugent.be",
-                          reply_to="hpc-admin@lists.ugent.be",
-                          subject="PBS check for jobs belonging to gracing or inactive users",
+                          mail_from='HPC-user-admin@ugent.be',
+                          reply_to='hpc-admin@lists.ugent.be',
+                          subject='PBS check for jobs belonging to gracing or inactive users',
                           message=message)
     except Exception, err:
         logger.error("Failed in sending mail to %s (%s)." % (mail_to, err))
@@ -207,36 +214,54 @@ def main(args):
     """Main script."""
 
     parser = OptionParser()
-    parser.add_option("-d", "--dry-run", dest="dry_run", default=False, action="store_true",
-                      help="Do NOT perform any database actions, simply output what would be done")
-    parser.add_option("", "--debug", dest="debug", default=False, action="store_true",
-                      help="Enable debug output to log.")
-    parser.add_option("-m", "--mail-report", dest="mail", default=False, action="store_true",
-                      help="Send mail to the hpc-admin list with job list from gracing or inactive users")
+    parser.add_option('-d', '--dry-run', dest='dry_run', default=False, action='store_true',
+                      help='Do NOT perform any database actions, simply output what would be done')
+    parser.add_option('', '--debug', dest='debug', default=False, action='store_true',
+                      help='Enable debug output to log.')
+    parser.add_option('-m', '--mail-report', dest='mail', default=False, action='store_true',
+                      help='Send mail to the hpc-admin list with job list from gracing or inactive users')
+    parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true',
+                      help='Check the Nagios file and display its contents. Should be used by Icinga.')
 
     (options, args) = parser.parse_args(args)
+
+    nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
+
+    if options.nagios:
+        nagios_reporter.report_and_exit()
+        sys.exit(0)  # not reached
 
     if options.debug:
         fancylogger.setLogLevel(logging.DEBUG)
     else:
         fancylogger.setLogLevel(logging.INFO)
 
-    ldap = LdapQuery()
+    try:
+        ldap = LdapQuery()
 
-    grace_users = get_grace_users(ldap)
-    inactive_users = get_inactive_users(ldap)
+        grace_users = get_grace_users(ldap)
+        inactive_users = get_inactive_users(ldap)
 
-    pbs_query = PBSQuery()
+        pbs_query = PBSQuery()
 
-    t = time.ctime()
-    jobs = pbs_query.getjobs()  # we just get them all
+        t = time.ctime()
+        jobs = pbs_query.getjobs()  # we just get them all
 
-    removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, options.dry_run)
-    removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
+        removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, options.dry_run)
+        removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
 
-    if options.mail and not options.dry_run:
-        # For now, we always mail.
-        mail_report(t, removed_queued, removed_running)
+        if options.mail and not options.dry_run:
+            # For now, we always mail.
+            mail_report(t, removed_queued, removed_running)
+    except Exception, err:
+        logger.error("Something went wrong: {err}".format(err=err))
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
+        sys.exit(NagiosReporter.NAGIOS_EXIT_CRITICAL)
+
+    if len(removed_queued) > 0 or len(removed_running) > 0:
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL grace or inactive user jobs queud: {queued}, running: {running} | G={queued} R={running}".format(grace=len(removed_queued), running=len(remove_running_jobs)))
+    else:
+        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
 
 
 if __name__ == '__main__':
