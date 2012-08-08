@@ -31,7 +31,7 @@ chmod 755 %{buildroot}/usr/bin/
 
 install -m 750 quota_check_user_notification.py %{buildroot}/usr/bin/
 install -m 750 dshowq.py %{buildroot}/usr/bin
-install -n 750 pbs_check_inactive_user_jobs.py %{buildroot}/usr/bin
+install -m 750 pbs_check_inactive_user_jobs.py %{buildroot}/usr/bin
 
 %clean
 rm -rf %{buildroot}
