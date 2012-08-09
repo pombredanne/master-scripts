@@ -41,6 +41,7 @@ rm -rf %{buildroot}
 %files
 %defattr(750,root,root,-)
 %dir %{logdir}
+%dir %{logdir}/quota
 %dir %{logdir}/pickles
 %{_bindir}/quota_check_user_notification.py
 %{_bindir}/dshowq.py
