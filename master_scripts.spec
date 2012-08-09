@@ -1,10 +1,10 @@
-%define logdir %{_localstatedir}/log/quota
+%define logdir %{_localstatedir}/log
 %define _unpackaged_files_terminate_build 0
 
 Summary: UGent HPC scripts that should be deployed on the masters
 Name: master_scripts
 Version: 0.3.2
-Release: 1
+Release: 2
 License: GPL
 Group: Applications/System
 Source: %{name}-%{version}.tar.gz
@@ -26,6 +26,8 @@ mkdir -p %{buildroot}/%{logdir}
 chmod 750 %{buildroot}/%{logdir}
 mkdir -p %{buildroot}/%{logdir}/pickles
 chmod 750 %{buildroot}/%{logdir}/pickles
+mkdir -p %{buildroot}/%{logdir}/quota/pickles
+chmod 750 %{buildroot}/%{logdir}/quota/pickles
 mkdir -p %{buildroot}/usr/bin/
 chmod 755 %{buildroot}/usr/bin/
 
