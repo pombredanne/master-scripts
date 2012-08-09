@@ -251,8 +251,8 @@ def main(args):
         removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
 
         if options.mail and not options.dry_run:
-            # For now, we always mail.
-            mail_report(t, removed_queued, removed_running)
+            if len(removed_queue) > 0 or len(running_queue) > 0:
+                mail_report(t, removed_queued, removed_running)
     except Exception, err:
         logger.error("Something went wrong: {err}".format(err=err))
         nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
