@@ -251,7 +251,7 @@ def main(args):
         removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
 
         if options.mail and not options.dry_run:
-            if len(removed_queue) > 0 or len(running_queue) > 0:
+            if len(removed_queued) > 0 or len(running_queued) > 0:
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
         logger.error("Something went wrong: {err}".format(err=err))
