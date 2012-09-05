@@ -2,7 +2,7 @@
 
 """
 Collect showq info
-- filter 
+- filter
 - distribute pickle
 """
 import cPickle
@@ -257,7 +257,7 @@ def collectgroupsLDAP(indiv):
         if us in found: continue
 
         # find vo of this user
-        vo = filter(lambda x: us in x['memberUid'], vos)
+        vo = filter(lambda x: us in x.get('memberUid',[]), vos)
         if len(vo) == 1:
             # check if for default VO
             if vo[0]['cn'] == defaultvo:
