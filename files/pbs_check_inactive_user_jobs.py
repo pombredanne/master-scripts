@@ -37,6 +37,7 @@ from PBSQuery import PBSQuery
 
 # --------------------------------------------------------------------
 import vsc.fancylogger as fancylogger
+from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
 from vsc.utils.nagios import NagiosReporter
@@ -237,7 +238,8 @@ def main(args):
         fancylogger.setLogLevel(logging.INFO)
 
     try:
-        ldap = LdapQuery()
+        vsc_config = VscConfiguration()
+        ldap = LdapQuery(vsc_config)
 
         grace_users = get_grace_users(ldap)
         inactive_users = get_inactive_users(ldap)
