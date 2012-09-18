@@ -26,6 +26,7 @@ logger = fancylogger.getLogger(__name__)
 fancylogger.setLogLevel(logging.INFO)
 ## need the full utils, not the simple ones
 try:
+    from vsc.ldap.configuration import VscConfiguration
     from vsc.ldap import utils
 except Exception, err:
     logger.critical("Can't init ldap utils: %s" % err)
@@ -244,7 +245,8 @@ def collectgroupsLDAP(indiv):
     Uses LDAP directly
     """
     #setdebugloglevel(False)
-    u = utils.LdapQuery()
+    vsc_config = VscConfiguration()
+    u = utils.LdapQuery(vsc_config)
 
     ## all sites filter
     ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
