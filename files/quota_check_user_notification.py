@@ -43,10 +43,11 @@ from vsc.gpfs.quota.report import MailReporter
 from vsc.utils.nagios import NagiosReporter
 from vsc.gpfs.utils.exceptions import CriticalException
 
+
 ## Constants
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/gpfs_quota_checker.nagios.pickle'
 NAGIOS_HEADER = 'quota_check'
-NAGIOS_CHECK_INTERVAL_THRESHOLD = 30 * 60  ## 30 minutes
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 30 * 60  # 30 minutes
 
 QUOTA_CHECK_LOG_FILE = '/var/log/quota/gpfs_quota_checker.log'
 QUOTA_CHECK_REMINDER_CACHE_FILENAME = '/var/log/quota/gpfs_quota_checker.report.reminderCache.pickle'
@@ -81,7 +82,7 @@ def __nub(list):
     """
     seen = set()
     seen_add = seen.add
-    return [ x for x in list if x not in seen and not seen_add(x)]
+    return [x for x in list if x not in seen and not seen_add(x)]
 
 
 def get_gpfs_mount_points():
@@ -135,14 +136,14 @@ def get_mmrepquota_maps(devices, user_id_map):
                 ## the backend expects user names
                 ## getpwuid should be using the ncd cache for the LDAP info,
                 ## so this should not hurt the system much
-		uId = int(uId)
+                uId = int(uId)
                 user_name = None
                 if user_id_map and user_id_map.has_key(uId):
                     user_name = user_id_map[uId]
                 else:
                     try:
-                        user_name = pwd.getpwuid(uId)[0] ## backup
-                    except Exception, err:
+                        user_name = pwd.getpwuid(uId)[0]  # backup
+                    except Exception, _:
                         pass
                 if user_name and user_name.startswith("vsc"):
                     user = user_map.get(user_name, User(user_name))
@@ -158,7 +159,7 @@ def get_mmrepquota_maps(devices, user_id_map):
                 vo = vo_map.get(vId, VO(vId))
                 vo.update_quota(device, used, soft, hard, doubt, expired, ts)
                 vo_map[vId] = vo
-    
+
     return (user_map, vo_map)
 
 
@@ -214,6 +215,7 @@ def main(argv):
         lockfile.release()
         sys.exit(2)
 
+
     try:
         mount_points = get_gpfs_mount_points()
         user_id_map = map_uids_to_names()
@@ -222,12 +224,12 @@ def main(argv):
         if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
             raise CriticalException('no usable data was found in the mmrepquota output')
 
-        ## figure out which users are crossing their softlimits
+        # figure out which users are crossing their softlimits
         ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
         logger.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
 
-        ## figure out which VO's are exceeding their softlimits
-        ## currently, we're not using this, VO's should have plenty of space
+        # figure out which VO's are exceeding their softlimits
+        # currently, we're not using this, VO's should have plenty of space
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
         logger.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
 
@@ -249,7 +251,7 @@ def main(argv):
                 u_storage.store_quota(user)
             except VscError, err:
                 logger.error("Could not store data for user %s" % (user.vsc_id))
-                pass  ## we're just moving on, trying the rest of the users. The error will have been logged anyway.
+                pass  # we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
         v_storage = VoFsQuotaStorage()
         for vo in mm_rep_quota_map_vos.values():
@@ -257,7 +259,7 @@ def main(argv):
                 v_storage.store_quota(vo)
             except VscError, err:
                 logger.error("Could not store vo data for vo %s" % (vo.vo_id))
-                pass  ## we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
+                pass  # we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
         # Report to the users who are exceeding their quota
         reporter = MailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
