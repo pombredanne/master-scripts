@@ -21,7 +21,6 @@ Created Mar 8, 2012
 
 # author: Andy Georges
 
-import logging
 import os
 import pwd
 import re
@@ -34,14 +33,16 @@ from lockfile import LockFailed
 import vsc.fancylogger as fancylogger
 
 from vsc.exceptions import VscError
-from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
+from vsc.filesystem.gpfs import GpfsOperations
 from vsc.gpfs.quota.mmfs_utils import MMRepQuota
 from vsc.gpfs.quota.entities import User, VO
 from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
 from vsc.gpfs.quota.report import MailReporter
-from vsc.utils.nagios import NagiosReporter
 from vsc.gpfs.utils.exceptions import CriticalException
+from vsc.utils.missing import nub
+from vsc.utils.nagios import NagiosReporter
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
 
 ## Constants
@@ -58,31 +59,15 @@ VSC_INSTALL_USER_NAME = 'vsc40003'
 #debug = True
 debug = False
 
-# logger setup
+# log setup
 fancylogger.logToFile(QUOTA_CHECK_LOG_FILE)
 fancylogger.logToScreen(False)
-fancylogger.setLogLevel(logging.INFO)
-logger = fancylogger.getLogger('gpfs_quota_checker')
-logger.setLevel(logging.INFO)
+fancylogger.setLogLevelInfo()
+log = fancylogger.getLogger('gpfs_quota_checker')
 
 
 opt_parser = OptionParser()
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
-
-
-def __nub(list):
-    """Returns the unique items of a list.
-
-    Code is taken from
-    http://stackoverflow.com/questions/480214/how-do-you-remove-duplicates-from-a-list-in-python-whilst-preserving-order
-
-    @type list: a list :-)
-
-    @returns: a new list with each element from `list` appearing only once (cfr. Michelle Dubois).
-    """
-    seen = set()
-    seen_add = seen.add
-    return [x for x in list if x not in seen and not seen_add(x)]
 
 
 def get_gpfs_mount_points():
@@ -96,14 +81,14 @@ def get_gpfs_mount_points():
         if r:
             (dev, _) = r.groups()
             ms.append(dev)
-    ms = __nub(ms)
+    ms = nub(ms)
     if not ms:
-        logger.critical('no devices found that are mounted under GPFS')
+        log.critical('no devices found that are mounted under GPFS')
         raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
     ## The following needs to be hardcoded
     if '/dev/home' not in ms:
         ms.append('/dev/home')
-    logger.info('Found GPFS mounted entries: %s' % (ms))
+    log.info('Found GPFS mounted entries: %s' % (ms))
     return ms
 
 
@@ -127,15 +112,14 @@ def get_mmrepquota_maps(devices, user_id_map):
         fM = mmfs.parse_vo_quota_lines(mmfs_output_lines_vo, timestamp=True)
 
         if uM is None:
-            logger.critical("could not obtain quota information for users for device %s" % (device))
-            #raise CriticalException("could not gather user data from mmrepquota for device %s" % (device))
+            log.critical("could not obtain quota information for users for device %s" % (device))
         else:
             for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
-                ## we get back the user IDs, not user names, since the GPFS tools
-                ## circumvent LDAP's ncd caching mechanism.
-                ## the backend expects user names
-                ## getpwuid should be using the ncd cache for the LDAP info,
-                ## so this should not hurt the system much
+                # we get back the user IDs, not user names, since the GPFS tools
+                # circumvent LDAP's ncd caching mechanism.
+                # the backend expects user names
+                # getpwuid should be using the ncd cache for the LDAP info,
+                # so this should not hurt the system much
                 uId = int(uId)
                 user_name = None
                 if user_id_map and user_id_map.has_key(uId):
@@ -151,11 +135,10 @@ def get_mmrepquota_maps(devices, user_id_map):
                     user_map[user_name] = user
 
         if fM is None:
-            logger.critical("could not obtain quota information for VOs for device %s" % (device))
-            #raise CriticalException("could not gather vo data from mmrepquota for device %s" % (device))
+            log.critical("could not obtain quota information for VOs for device %s" % (device))
         else:
             for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
-                ## here, we have the VO names, as per the GPFS configuration
+                # here, we have the VO names, as per the GPFS configuration
                 vo = vo_map.get(vId, VO(vId))
                 vo.update_quota(device, used, soft, hard, doubt, expired, ts)
                 vo_map[vId] = vo
@@ -198,7 +181,7 @@ def main(argv):
 
     (opts, args) = opt_parser.parse_args(argv)
 
-    logger.info('started GPFS quota check run.')
+    log.info('started GPFS quota check run.')
 
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
 
@@ -210,13 +193,14 @@ def main(argv):
     try:
         lockfile.acquire()
     except (LockFileReadError, LockFailed), err:
-        logger.critical('Cannot obtain lock, bailing %s' % (err))
+        log.critical('Cannot obtain lock, bailing %s' % (err))
         nagios_reporter.cache(2, "CRITICAL quota check script failed to obtain lock")
         lockfile.release()
         sys.exit(2)
 
 
     try:
+        gpfs_operations = GpfsOperations()
         mount_points = get_gpfs_mount_points()
         user_id_map = map_uids_to_names()
         (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points, user_id_map)
@@ -226,12 +210,12 @@ def main(argv):
 
         # figure out which users are crossing their softlimits
         ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
-        logger.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
+        log.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
 
         # figure out which VO's are exceeding their softlimits
         # currently, we're not using this, VO's should have plenty of space
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
-        logger.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
+        log.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
 
         # force mounting the home directories for the ghent users
         # FIXME: this works for the current setup, might be an issue if we change things.
@@ -250,7 +234,7 @@ def main(argv):
             try:
                 u_storage.store_quota(user)
             except VscError, err:
-                logger.error("Could not store data for user %s" % (user.vsc_id))
+                log.error("Could not store data for user %s" % (user.vsc_id))
                 pass  # we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
         v_storage = VoFsQuotaStorage()
@@ -258,33 +242,32 @@ def main(argv):
             try:
                 v_storage.store_quota(vo)
             except VscError, err:
-                logger.error("Could not store vo data for vo %s" % (vo.vo_id))
+                log.error("Could not store vo data for vo %s" % (vo.vo_id))
                 pass  # we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
         # Report to the users who are exceeding their quota
         reporter = MailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
         for user in ex_users:
             reporter.report_user(user)
-        logger.info("Done reporting users.")
+        log.info("Done reporting users.")
         reporter.close()
 
     except CriticalException, err:
-        logger.critical("critical exception caught: %s" % (err.message))
+        log.critical("critical exception caught: %s" % (err.message))
         nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
         lockfile.release()
         sys.exit(1)
     except Exception, err:
-        logger.critical("exception caught: %s" % (err))
+        log.critical("exception caught: %s" % (err))
         lockfile.release()
         sys.exit(1)
 
-    (nagios_exit_code, nagios_message) = nagios_analyse_data(ex_users
-                                                            , ex_vos
-                                                            , user_count=len(mm_rep_quota_map_users.values())
-                                                            , vo_count=len(mm_rep_quota_map_vos.values()))
+    (nagios_exit_code, nagios_message) = nagios_analyse_data(ex_users,
+                                                             ex_vos,
+                                                             user_count=len(mm_rep_quota_map_users.values()),
+                                                             vo_count=len(mm_rep_quota_map_vos.values()))
     nagios_reporter.cache(nagios_exit_code, nagios_message)
     lockfile.release()
 
 if __name__ == '__main__':
     main(sys.argv)
-
