@@ -25,6 +25,7 @@ import os
 import pwd
 import re
 import sys
+import time
 
 ## FIXME: deprecated in >= 2.7
 from optparse import OptionParser
@@ -35,10 +36,9 @@ import vsc.fancylogger as fancylogger
 from vsc.exceptions import VscError
 
 from vsc.filesystem.gpfs import GpfsOperations
-from vsc.gpfs.quota.mmfs_utils import MMRepQuota
-from vsc.gpfs.quota.entities import User, VO
+from vsc.gpfs.quota.entities import QuotaUser, QuotaFileset, QuotaGroup
 from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
-from vsc.gpfs.quota.report import MailReporter
+from vsc.gpfs.quota.report import GpfsQuotaMailReporter
 from vsc.gpfs.utils.exceptions import CriticalException
 from vsc.utils.missing import nub
 from vsc.utils.nagios import NagiosReporter
@@ -67,11 +67,16 @@ log = fancylogger.getLogger('gpfs_quota_checker')
 
 
 opt_parser = OptionParser()
+opt_parser.add_option('', '--dry-run', dest='dry_run', default=False, action='store_true', help='perform a dry run, not side effects.')
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 
+
 def get_gpfs_mount_points():
-    """Find out which devices are mounted under GPFS."""
+    """Find out which devices are mounted under GPFS.
+
+    FIXME: deprecated, everything for this sits in vsc.filesystes.gpfs.GpfsOperations
+    """
     source = '/proc/mounts'
     reg_mount = re.compile(r"^(?P<dev>\S+)\s+(?P<mntpt>\S+)\s+gpfs")
     f = file(source, 'r')
@@ -97,51 +102,65 @@ def get_mmrepquota_maps(devices, user_id_map):
 
     @type devices: [ String ]
 
-    Returns (user dictionary, vo dictionary).
+    Returns (user dictionary, group dictionary, fileset dictionary).
     """
     user_map = {}
-    vo_map = {}
+    fs_map = {}
+    gpfs_operations = GpfsOperations()
+
+    quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
 
     for device in devices:
 
-        mmfs = MMRepQuota(device)
-        mmfs_output_lines_user = mmfs.execute_user()
-        mmfs_output_lines_vo = mmfs.execute_fileset()
+        # These return a list of named tuples -- GpfsQuota
+        mmfs_user_quota_info = quota_map[device]['USR'].values()
+        mmfs_group_quota_info = quota_map[device]['GRP'].values()
+        mmfs_fileset_quota_info = quota_map[devices]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
 
-        uM = mmfs.parse_user_quota_lines(mmfs_output_lines_user, timestamp=True)
-        fM = mmfs.parse_vo_quota_lines(mmfs_output_lines_vo, timestamp=True)
-
-        if uM is None:
-            log.critical("could not obtain quota information for users for device %s" % (device))
+        if mmfs_user_quota_info is None:
+            log.warning("Could not obtain user quota information for device %s" % (device))
         else:
-            for (uId, ((used, soft, hard, doubt, expired), ts)) in uM.items():
+            for quota in mmfs_user_quota_info:
                 # we get back the user IDs, not user names, since the GPFS tools
                 # circumvent LDAP's ncd caching mechanism.
                 # the backend expects user names
                 # getpwuid should be using the ncd cache for the LDAP info,
                 # so this should not hurt the system much
-                uId = int(uId)
+                ts = int(time.time())
+                user_id = int(quota.name)
                 user_name = None
-                if user_id_map and user_id_map.has_key(uId):
-                    user_name = user_id_map[uId]
+                if user_id_map and user_id_map.has_key(user_id):
+                    user_name = user_id_map[user_id]
                 else:
                     try:
-                        user_name = pwd.getpwuid(uId)[0]  # backup
+                        user_name = pwd.getpwuid(user_id)[0]  # backup
                     except Exception, _:
-                        pass
+                        log.error("Cannot obtain a user ID for uid %s" % (user_id))
                 if user_name and user_name.startswith("vsc"):
-                    user = user_map.get(user_name, User(user_name))
-                    user.update_quota(device, used, soft, hard, doubt, expired, ts)
+                    user = user_map.get(user_name, QuotaUser(user_name))
+                    user.update_quota(device,
+                                      quota.blocksUsed,
+                                      quota.soft,
+                                      quota.hard,
+                                      quota.doubt,
+                                      quota.expired,
+                                      ts)
                     user_map[user_name] = user
 
-        if fM is None:
-            log.critical("could not obtain quota information for VOs for device %s" % (device))
+        if mmfs_fileset_quota_info is None:
+            log.warning("Could not obtain fileset quota information for device %s" % (device))
         else:
-            for (vId, ((used, soft, hard, doubt, expired), ts)) in fM.items():
+            for quota in mmfs_fileset_quota_info:
+                used = user_quota['used']
+                soft = user_quota['soft']
+                hard = user_quota['hard']
+                doubt = user_quota['doubt']
+                expired = user_quota['grace']  # FIXME: check if this was supposed ot be a boolean or just the grace period
+                ts = int(time.time())
                 # here, we have the VO names, as per the GPFS configuration
-                vo = vo_map.get(vId, VO(vId))
-                vo.update_quota(device, used, soft, hard, doubt, expired, ts)
-                vo_map[vId] = vo
+                fs = fs_map.get(vId, VO(vId))
+                fs.update_quota(device, used, soft, hard, doubt, expired, ts)
+                fs_map[vId] = fs
 
     return (user_map, vo_map)
 
@@ -200,8 +219,6 @@ def main(argv):
 
 
     try:
-        gpfs_operations = GpfsOperations()
-        mount_points = get_gpfs_mount_points()
         user_id_map = map_uids_to_names()
         (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points, user_id_map)
 
@@ -232,7 +249,8 @@ def main(argv):
         u_storage = UserFsQuotaStorage()
         for user in mm_rep_quota_map_users.values():
             try:
-                u_storage.store_quota(user)
+                if not opts.dry_run:
+                    u_storage.store_quota(user)
             except VscError, err:
                 log.error("Could not store data for user %s" % (user.vsc_id))
                 pass  # we're just moving on, trying the rest of the users. The error will have been logged anyway.
@@ -240,21 +258,24 @@ def main(argv):
         v_storage = VoFsQuotaStorage()
         for vo in mm_rep_quota_map_vos.values():
             try:
-                v_storage.store_quota(vo)
+                if not opts.dry_run:
+                    v_storage.store_quota(vo)
             except VscError, err:
                 log.error("Could not store vo data for vo %s" % (vo.vo_id))
                 pass  # we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
-        # Report to the users who are exceeding their quota
-        reporter = MailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
-        for user in ex_users:
-            reporter.report_user(user)
-        log.info("Done reporting users.")
-        reporter.close()
+        if not opts.dry_run:
+            # Report to the users who are exceeding their quota
+            reporter = GpfsQuotaMailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
+            for user in ex_users:
+                reporter.report_user(user)
+            log.info("Done reporting users.")
+            reporter.close()
 
     except CriticalException, err:
         log.critical("critical exception caught: %s" % (err.message))
-        nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
+        if not opts.dry_run:
+            nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
         lockfile.release()
         sys.exit(1)
     except Exception, err:
