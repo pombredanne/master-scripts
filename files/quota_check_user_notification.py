@@ -68,6 +68,7 @@ log = fancylogger.getLogger('gpfs_quota_checker')
 
 opt_parser = OptionParser()
 opt_parser.add_option('', '--dry-run', dest='dry_run', default=False, action='store_true', help='perform a dry run, not side effects.')
+opt_parser.add_option('-d', '---debug', dest='debug', default=False, action='store_true', help='set the log level to debug.')
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 
@@ -107,6 +108,8 @@ def get_mmrepquota_maps(devices, user_id_map):
     user_map = {}
     fs_map = {}
     gpfs_operations = GpfsOperations()
+    devices = gpfs_operations.list_filesystems().keys()
+    self.log.debug("Found the following GPFS filesystems: %s" % (devices))
 
     quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
 
@@ -216,6 +219,8 @@ def map_uids_to_names():
 def main(argv):
 
     (opts, args) = opt_parser.parse_args(argv)
+    if opts.debug:
+        fancylogger.setLogLevelDebug()
 
     log.info('started GPFS quota check run.')
 
@@ -237,7 +242,7 @@ def main(argv):
 
     try:
         user_id_map = map_uids_to_names()
-        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(mount_points, user_id_map)
+        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(user_id_map)
 
         if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
             raise CriticalException('no usable data was found in the mmrepquota output')
