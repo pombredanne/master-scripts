@@ -64,7 +64,7 @@ log = fancylogger.getLogger('gpfs_quota_checker')
 
 opt_parser = OptionParser()
 opt_parser.add_option('', '--dry-run', dest='dry_run', default=False, action='store_true', help='perform a dry run, not side effects.')
-opt_parser.add_option('-d', '---debug', dest='debug', default=False, action='store_true', help='set the log level to debug.')
+opt_parser.add_option('-d', '--debug', dest='debug', default=False, action='store_true', help='set the log level to debug.')
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 
