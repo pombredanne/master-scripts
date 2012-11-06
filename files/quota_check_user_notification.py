@@ -137,15 +137,14 @@ def _update_quota(quota_dict, id, device, quota, default):
     @param default: class to instantiate when the entity is not yet present in the map, e.g., QuotaUser
     """
     ts = int(time.time())
-    id = quota.name
     entity = quota_dict.get(id, default(id))
-    entity.update_quota(device,
-                        quota.blocksUsed,
-                        quota.soft,
-                        quota.hard,
-                        quota.doubt,
-                        quota.expired,
-                        ts)
+    entity.update_device_quota(device,
+                               quota.blockUsage,
+                               quota.blockQuota,
+                               quota.blockLimit,
+                               quota.blockInDoubt,
+                               quota.blockGrace,
+                               ts)
     quota_dict[id] = entity
 
 
