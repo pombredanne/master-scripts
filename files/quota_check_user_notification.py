@@ -111,26 +111,28 @@ def get_mmrepquota_maps(user_id_map):
                         log.error("Cannot obtain a user ID for uid %s" % (user_id))
                 if user_name and user_name.startswith("vsc"):
                     quota.name = user_name
-                    _update_quota(user_map, device, quota, QuotaUser)
+                    _update_quota(user_map, user_name, device, quota, QuotaUser)
 
         if mmfs_fileset_quota_info is None:
             log.warning("Could not obtain fileset quota information for device %s" % (device))
         else:
             for quota in mmfs_fileset_quota_info:
-                _update_quota(fs_map, device, quota, QuotaFileset)
+                _update_quota(fs_map, quota.name, device, quota, QuotaFileset)
 
     return (user_map, fs_map)
 
 
-def _update_quota(quota_dict, device, quota, default):
+def _update_quota(quota_dict, id, device, quota, default):
     """Update the quota in the dict for the given device.
 
     @type quota_dict: dictionary {string: QuotaEntity}
+    @type id: string
     @type device: string
     @type quota: GpfsQuota instance
     @type default: QuotaEntity subclass
 
     @param quota_dict: quota dictionary with the entitities to be updated
+    @param id: the id of the entity
     @param device: the device for which we are updating the information
     @param quota: the new quota information for the given device
     @param default: class to instantiate when the entity is not yet present in the map, e.g., QuotaUser
