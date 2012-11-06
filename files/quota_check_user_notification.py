@@ -89,7 +89,7 @@ def get_mmrepquota_maps(user_id_map):
 
         # These return a list of named tuples -- GpfsQuota
         mmfs_user_quota_info = quota_map[device]['USR'].values()
-        mmfs_fileset_quota_info = quota_map[devices]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
+        mmfs_fileset_quota_info = quota_map[device]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
 
         if mmfs_user_quota_info is None:
             log.warning("Could not obtain user quota information for device %s" % (device))
