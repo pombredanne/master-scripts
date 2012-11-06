@@ -110,7 +110,6 @@ def get_mmrepquota_maps(user_id_map):
                     except Exception, _:
                         log.error("Cannot obtain a user ID for uid %s" % (user_id))
                 if user_name and user_name.startswith("vsc"):
-                    quota.name = user_name
                     _update_quota(user_map, user_name, device, quota, QuotaUser)
 
         if mmfs_fileset_quota_info is None:
