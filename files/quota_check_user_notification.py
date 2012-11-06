@@ -23,7 +23,6 @@ Created Mar 8, 2012
 
 import os
 import pwd
-import re
 import sys
 import time
 
@@ -36,14 +35,12 @@ import vsc.fancylogger as fancylogger
 from vsc.exceptions import VscError
 
 from vsc.filesystem.gpfs import GpfsOperations
-from vsc.gpfs.quota.entities import QuotaUser, QuotaFileset, QuotaGroup
+from vsc.gpfs.quota.entities import QuotaUser, QuotaFileset
 from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
 from vsc.gpfs.quota.report import GpfsQuotaMailReporter
 from vsc.gpfs.utils.exceptions import CriticalException
-from vsc.utils.missing import nub
 from vsc.utils.nagios import NagiosReporter
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
-
 
 ## Constants
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/gpfs_quota_checker.nagios.pickle'
@@ -65,43 +62,18 @@ fancylogger.logToScreen(False)
 fancylogger.setLogLevelInfo()
 log = fancylogger.getLogger('gpfs_quota_checker')
 
-
 opt_parser = OptionParser()
 opt_parser.add_option('', '--dry-run', dest='dry_run', default=False, action='store_true', help='perform a dry run, not side effects.')
 opt_parser.add_option('-d', '---debug', dest='debug', default=False, action='store_true', help='set the log level to debug.')
 opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
 
 
-
-def get_gpfs_mount_points():
-    """Find out which devices are mounted under GPFS.
-
-    FIXME: deprecated, everything for this sits in vsc.filesystes.gpfs.GpfsOperations
-    """
-    source = '/proc/mounts'
-    reg_mount = re.compile(r"^(?P<dev>\S+)\s+(?P<mntpt>\S+)\s+gpfs")
-    f = file(source, 'r')
-    ms = []
-    for fs in f.readlines():
-        r = reg_mount.search(fs)
-        if r:
-            (dev, _) = r.groups()
-            ms.append(dev)
-    ms = nub(ms)
-    if not ms:
-        log.critical('no devices found that are mounted under GPFS')
-        raise CriticalException("no devices found that are mounted under GPFS when checking %s" % (source))
-    ## The following needs to be hardcoded
-    if '/dev/home' not in ms:
-        ms.append('/dev/home')
-    log.info('Found GPFS mounted entries: %s' % (ms))
-    return ms
-
-
-def get_mmrepquota_maps(devices, user_id_map):
+def get_mmrepquota_maps(user_id_map):
     """Run the mmrepquota command and parse all data into user and VO maps.
 
-    @type devices: [ String ]
+    @type user_id_map: dictionary {uid: string}
+
+    @param user_id_map: mapping from numerical user IDs to user names.
 
     Returns (user dictionary, group dictionary, fileset dictionary).
     """
@@ -109,7 +81,7 @@ def get_mmrepquota_maps(devices, user_id_map):
     fs_map = {}
     gpfs_operations = GpfsOperations()
     devices = gpfs_operations.list_filesystems().keys()
-    self.log.debug("Found the following GPFS filesystems: %s" % (devices))
+    log.debug("Found the following GPFS filesystems: %s" % (devices))
 
     quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
 
@@ -117,7 +89,6 @@ def get_mmrepquota_maps(devices, user_id_map):
 
         # These return a list of named tuples -- GpfsQuota
         mmfs_user_quota_info = quota_map[device]['USR'].values()
-        mmfs_group_quota_info = quota_map[device]['GRP'].values()
         mmfs_fileset_quota_info = quota_map[devices]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
 
         if mmfs_user_quota_info is None:
@@ -129,7 +100,6 @@ def get_mmrepquota_maps(devices, user_id_map):
                 # the backend expects user names
                 # getpwuid should be using the ncd cache for the LDAP info,
                 # so this should not hurt the system much
-                ts = int(time.time())
                 user_id = int(quota.name)
                 user_name = None
                 if user_id_map and user_id_map.has_key(user_id):
@@ -149,13 +119,7 @@ def get_mmrepquota_maps(devices, user_id_map):
             for quota in mmfs_fileset_quota_info:
                 _update_quota(fs_map, device, quota, QuotaFileset)
 
-        if mmfs_fileset_quota_info is None:
-            log.warning("Could not obtain fileset quota information for device %s" % (device))
-        else:
-            for quota in mmfs_fileset_quota_info:
-                _update_quota(grp_map, device, quota, QuotaGroup)
-
-    return (user_map, vo_map)
+    return (user_map, fs_map)
 
 
 def _update_quota(quota_dict, device, quota, default):
@@ -182,7 +146,6 @@ def _update_quota(quota_dict, device, quota, default):
                         quota.expired,
                         ts)
     quota_dict[id] = entity
-
 
 
 def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
@@ -239,10 +202,11 @@ def main(argv):
         lockfile.release()
         sys.exit(2)
 
-
     try:
         user_id_map = map_uids_to_names()
-        (mm_rep_quota_map_users, mm_rep_quota_map_vos) = get_mmrepquota_maps(user_id_map)
+        (mm_rep_quota_map_users, mm_rep_quota_map_filesets) = get_mmrepquota_maps(user_id_map)
+
+        mm_rep_quota_map_vos = dict((id, q) for (id, q) in mm_rep_quota_map_filesets if id.startswith('gvo'))
 
         if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
             raise CriticalException('no usable data was found in the mmrepquota output')
