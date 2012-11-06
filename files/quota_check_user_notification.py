@@ -137,32 +137,49 @@ def get_mmrepquota_maps(devices, user_id_map):
                     except Exception, _:
                         log.error("Cannot obtain a user ID for uid %s" % (user_id))
                 if user_name and user_name.startswith("vsc"):
-                    user = user_map.get(user_name, QuotaUser(user_name))
-                    user.update_quota(device,
-                                      quota.blocksUsed,
-                                      quota.soft,
-                                      quota.hard,
-                                      quota.doubt,
-                                      quota.expired,
-                                      ts)
-                    user_map[user_name] = user
+                    quota.name = user_name
+                    _update_quota(user_map, device, quota, QuotaUser)
 
         if mmfs_fileset_quota_info is None:
             log.warning("Could not obtain fileset quota information for device %s" % (device))
         else:
             for quota in mmfs_fileset_quota_info:
-                used = user_quota['used']
-                soft = user_quota['soft']
-                hard = user_quota['hard']
-                doubt = user_quota['doubt']
-                expired = user_quota['grace']  # FIXME: check if this was supposed ot be a boolean or just the grace period
-                ts = int(time.time())
-                # here, we have the VO names, as per the GPFS configuration
-                fs = fs_map.get(vId, VO(vId))
-                fs.update_quota(device, used, soft, hard, doubt, expired, ts)
-                fs_map[vId] = fs
+                _update_quota(fs_map, device, quota, QuotaFileset)
+
+        if mmfs_fileset_quota_info is None:
+            log.warning("Could not obtain fileset quota information for device %s" % (device))
+        else:
+            for quota in mmfs_fileset_quota_info:
+                _update_quota(grp_map, device, quota, QuotaGroup)
 
     return (user_map, vo_map)
+
+
+def _update_quota(quota_dict, device, quota, default):
+    """Update the quota in the dict for the given device.
+
+    @type quota_dict: dictionary {string: QuotaEntity}
+    @type device: string
+    @type quota: GpfsQuota instance
+    @type default: QuotaEntity subclass
+
+    @param quota_dict: quota dictionary with the entitities to be updated
+    @param device: the device for which we are updating the information
+    @param quota: the new quota information for the given device
+    @param default: class to instantiate when the entity is not yet present in the map, e.g., QuotaUser
+    """
+    ts = int(time.time())
+    id = quota.name
+    entity = quota_dict.get(id, default(id))
+    entity.update_quota(device,
+                        quota.blocksUsed,
+                        quota.soft,
+                        quota.hard,
+                        quota.doubt,
+                        quota.expired,
+                        ts)
+    quota_dict[id] = entity
+
 
 
 def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
