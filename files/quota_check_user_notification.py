@@ -81,6 +81,7 @@ def get_mmrepquota_maps(user_id_map):
     fs_map = {}
     gpfs_operations = GpfsOperations()
     devices = gpfs_operations.list_filesystems().keys()
+    filesets = gpfs_operations.list_filesets()
     log.debug("Found the following GPFS filesystems: %s" % (devices))
 
     quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
@@ -115,8 +116,11 @@ def get_mmrepquota_maps(user_id_map):
         if mmfs_fileset_quota_info is None:
             log.warning("Could not obtain fileset quota information for device %s" % (device))
         else:
+            device_filesets = filesets[device]
             for quota in mmfs_fileset_quota_info:
-                _update_quota(fs_map, quota.name, device, quota, QuotaFileset)
+                # we still need to look up the fileset name
+                fileset_name = device_filesets[quota.name]['filesetName']
+                _update_quota(fs_map, fileset_name, device, quota, QuotaFileset)
 
     return (user_map, fs_map)
 
@@ -213,12 +217,12 @@ def main(argv):
 
         # figure out which users are crossing their softlimits
         ex_users = filter(lambda u: u.exceeds(), mm_rep_quota_map_users.values())
-        log.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.vsc_id for u in ex_users]))
+        log.warning("found %s users who are exceeding their quota: %s" % (len(ex_users), [u.user_id for u in ex_users]))
 
         # figure out which VO's are exceeding their softlimits
         # currently, we're not using this, VO's should have plenty of space
         ex_vos = filter(lambda v: v.exceeds(), mm_rep_quota_map_vos.values())
-        log.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.vo_id for v in ex_vos]))
+        log.warning("found %s VOs who are exceeding their quota: %s" % (len(ex_vos), [v.fileset_id for v in ex_vos]))
 
         # force mounting the home directories for the ghent users
         # FIXME: this works for the current setup, might be an issue if we change things.
