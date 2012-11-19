@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 ##
 #
+# Copyright 2012 Ghent University
 # Copyright 2012 Andy Georges
 #
 # This file is part of the tools originally by the HPC team of
@@ -39,6 +40,8 @@ from vsc.gpfs.quota.entities import QuotaUser, QuotaFileset
 from vsc.gpfs.quota.fs_store import UserFsQuotaStorage, VoFsQuotaStorage
 from vsc.gpfs.quota.report import GpfsQuotaMailReporter
 from vsc.gpfs.utils.exceptions import CriticalException
+from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.utils import LdapQuery
 from vsc.utils.nagios import NagiosReporter
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
@@ -256,6 +259,7 @@ def main(argv):
 
         if not opts.dry_run:
             # Report to the users who are exceeding their quota
+            LdapQuery(VscConfiguration())  # Initialise here, the mailreporter will use it.
             reporter = GpfsQuotaMailReporter(QUOTA_CHECK_REMINDER_CACHE_FILENAME)
             for user in ex_users:
                 reporter.report_user(user)
