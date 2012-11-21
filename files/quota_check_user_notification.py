@@ -84,8 +84,10 @@ def get_mmrepquota_maps(user_id_map):
     fs_map = {}
     gpfs_operations = GpfsOperations()
     devices = gpfs_operations.list_filesystems().keys()
-    filesets = gpfs_operations.list_filesets()
     log.debug("Found the following GPFS filesystems: %s" % (devices))
+
+    filesets = gpfs_operations.list_filesets()
+    log.debug("Found the following GPFS filesets: %s" % (filesets))
 
     quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
 
@@ -202,7 +204,8 @@ def main(argv):
 
     lockfile = TimestampedPidLockfile(QUOTA_CHECK_LOCK_FILE)
     try:
-        lockfile.acquire()
+        if not opts.dry_run:
+            lockfile.acquire()
     except (LockFileReadError, LockFailed), err:
         log.critical('Cannot obtain lock, bailing %s' % (err))
         nagios_reporter.cache(2, "CRITICAL quota check script failed to obtain lock")
@@ -270,11 +273,13 @@ def main(argv):
         log.critical("critical exception caught: %s" % (err.message))
         if not opts.dry_run:
             nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
-        lockfile.release()
+        if not opts.dry_run:
+            lockfile.release()
         sys.exit(1)
     except Exception, err:
         log.critical("exception caught: %s" % (err))
-        lockfile.release()
+        if not opts.dry_run:
+            lockfile.release()
         sys.exit(1)
 
     (nagios_exit_code, nagios_message) = nagios_analyse_data(ex_users,
@@ -282,7 +287,8 @@ def main(argv):
                                                              user_count=len(mm_rep_quota_map_users.values()),
                                                              vo_count=len(mm_rep_quota_map_vos.values()))
     nagios_reporter.cache(nagios_exit_code, nagios_message)
-    lockfile.release()
+    if not opts.dry_run:
+        lockfile.release()
 
 if __name__ == '__main__':
     main(sys.argv)
