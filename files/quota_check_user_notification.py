@@ -42,7 +42,7 @@ from vsc.gpfs.quota.report import GpfsQuotaMailReporter
 from vsc.gpfs.utils.exceptions import CriticalException
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.utils import LdapQuery
-from vsc.utils.nagios import NagiosReporter
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
 ## Constants
@@ -78,7 +78,7 @@ def get_mmrepquota_maps(user_id_map):
 
     @param user_id_map: mapping from numerical user IDs to user names.
 
-    Returns (user dictionary, group dictionary, fileset dictionary).
+    Returns (user dictionary, fileset dictionary).
     """
     user_map = {}
     fs_map = {}
@@ -91,11 +91,12 @@ def get_mmrepquota_maps(user_id_map):
 
     quota_map = gpfs_operations.list_quota(devices)  # we provide the device list so home gets included
 
+    #log.info("Quota map = %s " % (quota_map))
+
     for device in devices:
 
         # These return a list of named tuples -- GpfsQuota
         mmfs_user_quota_info = quota_map[device]['USR'].values()
-        mmfs_fileset_quota_info = quota_map[device]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
 
         if mmfs_user_quota_info is None:
             log.warning("Could not obtain user quota information for device %s" % (device))
@@ -108,20 +109,24 @@ def get_mmrepquota_maps(user_id_map):
                 # so this should not hurt the system much
                 user_id = int(quota.name)
                 user_name = None
+
                 if user_id_map and user_id_map.has_key(user_id):
                     user_name = user_id_map[user_id]
                 else:
                     try:
                         user_name = pwd.getpwuid(user_id)[0]  # backup
                     except Exception, _:
-                        log.error("Cannot obtain a user ID for uid %s" % (user_id))
+                        log.debug("Cannot obtain a user ID for uid %s" % (user_id))
                 if user_name and user_name.startswith("vsc"):
                     _update_quota(user_map, user_name, device, quota, QuotaUser)
+
+        log.debug("Updating filesets for device %s" % (device))
+        mmfs_fileset_quota_info = quota_map[device]['FILESET'].values()  # on the current Tier-2 storage, one fileset per VO
 
         if mmfs_fileset_quota_info is None:
             log.warning("Could not obtain fileset quota information for device %s" % (device))
         else:
-            device_filesets = filesets[device]
+            device_filesets = filesets.get(device, [])
             for quota in mmfs_fileset_quota_info:
                 # we still need to look up the fileset name
                 fileset_name = device_filesets[quota.name]['filesetName']
@@ -172,11 +177,11 @@ def nagios_analyse_data(ex_users, ex_vos, user_count, vo_count):
     ex_u = len(ex_users)
     ex_v = len(ex_vos)
     if ex_u == 0 and ex_v == 0:
-        return (NagiosReporter.NAGIOS_EXIT_OK, "OK | ex_u=0 ex_v=0 pU=0 pV=0")
+        return (NAGIOS_EXIT_OK, NagiosResult("No quota exceeded", ex_u=0, ex_v=0, pU=0, pV=0))
     else:
         pU = float(ex_u) / user_count
         pV = float(ex_v) / vo_count
-        return (NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING quota exceeded | ex_u=%d ex_v=%d pU=%f pV=%f" % (ex_u, ex_v, pU, pV))
+        return (NAGIOS_EXIT_WARNING, NagiosResult("quota exceeded", ex_u=ex_u, ex_v=ex_v, pU=pU, pV=pV))
 
 
 def map_uids_to_names():
@@ -208,7 +213,7 @@ def main(argv):
             lockfile.acquire()
     except (LockFileReadError, LockFailed), err:
         log.critical('Cannot obtain lock, bailing %s' % (err))
-        nagios_reporter.cache(2, "CRITICAL quota check script failed to obtain lock")
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "CRITICAL quota check script failed to obtain lock")
         lockfile.release()
         sys.exit(2)
 
@@ -216,7 +221,7 @@ def main(argv):
         user_id_map = map_uids_to_names()
         (mm_rep_quota_map_users, mm_rep_quota_map_filesets) = get_mmrepquota_maps(user_id_map)
 
-        mm_rep_quota_map_vos = dict((id, q) for (id, q) in mm_rep_quota_map_filesets if id.startswith('gvo'))
+        mm_rep_quota_map_vos = dict((id, q) for (id, q) in mm_rep_quota_map_filesets.items() if id.startswith('gvo'))
 
         if not mm_rep_quota_map_users or not mm_rep_quota_map_vos:
             raise CriticalException('no usable data was found in the mmrepquota output')
@@ -272,7 +277,7 @@ def main(argv):
     except CriticalException, err:
         log.critical("critical exception caught: %s" % (err.message))
         if not opts.dry_run:
-            nagios_reporter.cache(2, "CRITICAL script failed - %s" % (err.message))
+            nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "CRITICAL script failed - %s" % (err.message))
         if not opts.dry_run:
             lockfile.release()
         sys.exit(1)
@@ -282,13 +287,15 @@ def main(argv):
             lockfile.release()
         sys.exit(1)
 
-    (nagios_exit_code, nagios_message) = nagios_analyse_data(ex_users,
-                                                             ex_vos,
-                                                             user_count=len(mm_rep_quota_map_users.values()),
-                                                             vo_count=len(mm_rep_quota_map_vos.values()))
-    nagios_reporter.cache(nagios_exit_code, nagios_message)
+    (nagios_exit_code, nagios_result) = nagios_analyse_data(ex_users,
+                                                            ex_vos,
+                                                            user_count=len(mm_rep_quota_map_users.values()),
+                                                            vo_count=len(mm_rep_quota_map_vos.values()))
     if not opts.dry_run:
+        nagios_reporter.cache(nagios_exit_code, "%s" % (nagios_result,))
         lockfile.release()
+    else:
+        log.info("Nagios exit: (%s, %s)" % (nagios_exit_code, nagios_result))
 
 if __name__ == '__main__':
     main(sys.argv)
