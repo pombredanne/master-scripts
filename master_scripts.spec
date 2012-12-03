@@ -9,7 +9,7 @@ License: GPL
 Group: Applications/System
 Source: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
-Requires: python-vsc-packages-common, python-vsc-packages-logging, python-vsc-packages-gpfs, python-vsc-packages-lockfile, python-vsc-packages-utils, python-vsc-packages-core, python-vsc-packages-exceptions, python-vsc-packages-ldap
+Requires: python-vsc-packages-common, python-vsc-packages-logging, python-vsc-packages-gpfs, python-vsc-packages-lockfile, python-vsc-packages-utils, python-vsc-core, python-vsc-packages-ldap
 %description
 Scripts that run on one or more masters
  - GPFS quota checking and caching
