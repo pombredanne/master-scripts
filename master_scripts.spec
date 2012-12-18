@@ -3,13 +3,15 @@
 
 Summary: UGent HPC scripts that should be deployed on the masters
 Name: master_scripts
-Version: 0.3.5
+Version: 0.3.6
 Release: 1
 License: GPL
 Group: Applications/System
 Source: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 Requires: python-vsc-packages-common, python-vsc-packages-logging, python-vsc-packages-gpfs, python-vsc-packages-lockfile, python-vsc-packages-utils, python-vsc-core, python-vsc-packages-ldap
+BuildArch: noarch
+
 %description
 Scripts that run on one or more masters
  - GPFS quota checking and caching
@@ -40,7 +42,6 @@ rm -rf %{buildroot}
 
 %files
 %defattr(750,root,root,-)
-%dir %{logdir}
 %dir %{logdir}/quota
 %dir %{logdir}/pickles
 %{_bindir}/quota_check_user_notification.py
