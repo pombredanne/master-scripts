@@ -150,7 +150,7 @@ def parseshowqxml(res, host, txt):
 
 
 def getout(host):
-    if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio"]:
+    if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]:
         if host == "gengar":
             exe = "%s --xml --host=master2.gengar.gent.vsc" % (realshowq)
         if host == "gastly":
@@ -165,6 +165,8 @@ def getout(host):
             exe="%s --xml --host=master11.dugtrio.gent.vsc"%(realshowq)
             # maui workaround:
             # exe = "ssh master11.dugtrio.gent.vsc /root/showq_to_xml.sh"
+        if host == "raichu":
+            exe = "%s --xml --host=master13.raichu.gent.vsc" % (realshowq)
     else:
         if not host:
             exe = "%s --xml" % realshowq
@@ -338,7 +340,7 @@ if __name__ == '__main__':
 
     res = {}
 
-    hosts = ["gengar", "gastly", "haunter", "gulpin", "dugtrio"]
+    hosts = ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]
     for host in hosts:
 
         oldres = res
