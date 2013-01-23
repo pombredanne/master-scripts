@@ -33,22 +33,23 @@ import vsc.utils.fs_store as store
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
 
 #Constants
-NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.test.pickle'
 NAGIOS_HEADER = 'dshowq'
 NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
 # HostsReported HostsUnavailable UserCount UserNoStorePossible
 NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 
-DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
+DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.test.lock'
 
 logger = fancylogger.getLogger(__name__)
-fancylogger.logToScreen(False)
+fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
 
 realshowq = '/usr/bin/showq'
@@ -163,13 +164,9 @@ def getout(host, dry_run=False):
         if host == "haunter":
             exe = "%s --xml --host=master5.haunter.gent.vsc" % (realshowq)
         if host == "gulpin":
-            exe="%s --xml --host=master9.gulpin.gent.vsc"%(realshowq)
-            # maui workaround:
-            # exe = "ssh master9.gulpin.gent.vsc /root/showq_to_xml.sh"
+            exe="%s --xml --host=master9.gulpin.gent.vsc" % (realshowq)
         if host == "dugtrio":
-            exe="%s --xml --host=master11.dugtrio.gent.vsc"%(realshowq)
-            # maui workaround:
-            # exe = "ssh master11.dugtrio.gent.vsc /root/showq_to_xml.sh"
+            exe="%s --xml --host=master11.dugtrio.gent.vsc" % (realshowq)
         if host == "raichu":
             exe = "%s --xml --host=master13.raichu.gent.vsc" % (realshowq)
     else:
@@ -264,11 +261,12 @@ def collectgroupsLDAP(indiv):
     u = LdapQuery(vsc_config)
 
     ## all sites filter
-    ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
+    ldapf = InstituteFilter('antwerpen') | InstituteFilter('brussel') | InstituteFilter('gent') | InstituteFilter('leuven')
+    #ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
 
     userMapsPerVo = {}
-    vos = u.vo_filter_search(filter=ldapf, attributes=['cn', 'description', 'institute', 'memberUid'])
-    members = u.user_filter_search(filter=ldapf, attributes=['institute', 'uid', 'gecos', 'cn'])
+    vos = u.vo_filter_search(ldap_filter=ldapf, attributes=['cn', 'description', 'institute', 'memberUid'])
+    members = u.user_filter_search(ldap_filter=ldapf, attributes=['institute', 'uid', 'gecos', 'cn'])
     found = []
     for us in indiv:
         if us in found:
@@ -331,12 +329,19 @@ def main():
     opt_parser = OptionParser()
     opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true',
                           help='print out nagios information')
-    opt_parser.add_option("-d", "--dry-run", dest="dry_run", default=False, action="store_true",
+    opt_parser.add_option("", "--dry-run", dest="dry_run", default=False, action="store_true",
                           help="Do not make any updates whatsoever.")
+    opt_parser.add_option("", "--debug", dest="debug", default=False, action="store_true",
+                          help="Put logging at debug level")
 
     (opts, args) = opt_parser.parse_args(sys.argv)
+
+    if opts.debug:
+        fancylogger.setLogLevelDebug()
+
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
     if opts.nagios:
+        logger.debug("Producing Nagios report and exiting.")
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
@@ -396,9 +401,9 @@ def main():
         nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
                               NagiosResult("cannot access home for user: %s" % (vsc_install_user_home),
                                            hosts=len(reported_hosts),
-                                           hosts_error=len(failed_hosts),
+                                           hosts_critical=len(failed_hosts),
                                            stored=0,
-                                           stored_error=0))
+                                           stored_critical=0))
         sys.exit(1)
 
     nagios_user_count = 0
@@ -431,9 +436,9 @@ def main():
         nagios_reporter.cache(NAGIOS_EXIT_WARNING,
                               NagiosResult("lock release failed (not locked)",
                                            hosts=len(reported_hosts),
-                                           hosts_error=len(failed_hosts),
+                                           hosts_critical=len(failed_hosts),
                                            stored=nagios_user_count,
-                                           stored_error=nagios_no_store))
+                                           stored_critical=nagios_no_store))
         sys.exit(1)
     except NotMyLock, err:
         logger.error('Lock release failed: not my lock')
@@ -443,9 +448,9 @@ def main():
     nagios_reporter.cache(NAGIOS_EXIT_OK,
                           NagiosResult("dshowq run successful",
                                        hosts=len(reported_hosts),
-                                       hosts_error=len(failed_hosts),
+                                       hosts_critical=len(failed_hosts),
                                        stored=nagios_user_count,
-                                       stored_error=nagios_no_store))
+                                       stored_critical=nagios_no_store))
 
     sys.exit(0)
 
