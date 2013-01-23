@@ -40,13 +40,13 @@ from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileRea
 
 
 #Constants
-NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.test.pickle'
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
 NAGIOS_HEADER = 'dshowq'
 NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
 # HostsReported HostsUnavailable UserCount UserNoStorePossible
 NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 
-DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.test.lock'
+DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
 
 logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(True)
