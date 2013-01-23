@@ -61,14 +61,14 @@ defaultvo = 'gvo00012'
 novos = ('gvo00012', 'gvo00016', 'gvo00017', 'gvo00018')
 
 
-def getinfo(res, host):
+def getinfo(res, host, dry_run=False):
     """
     Execute showq -v
     - parse into fields
     - add timestamp
     """
 
-    out = getout(host)
+    out = getout(host, dry_run)
     if not out:
         # Failure, do nothing
         logger.error("ERROR: Failed to get output from real showq.")
@@ -154,7 +154,7 @@ def parseshowqxml(res, host, txt):
     return res
 
 
-def getout(host):
+def getout(host, dry_run=False):
     if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]:
         if host == "gengar":
             exe = "%s --xml --host=master2.gengar.gent.vsc" % (realshowq)
@@ -178,6 +178,7 @@ def getout(host):
         else:
             logger.error("Unknown host specified: %s" % host)
             sys.exit(0)
+
     from subprocess import Popen, PIPE
     p = Popen(exe, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
     out = ''
@@ -193,7 +194,10 @@ def getout(host):
         logger.info("Subprocess %s ran OK, storing resulting data in pickle files" % (exe))
         # create backup of out, in case future showq commands fail
         try:
-            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
+            if not dry_run:
+                store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
+            else:
+                logger.info("Dry run: skipping actually storing picke files for cluster data")
         except (UserStorageError, FileStoreError, FileMoveError), err:
             # these should NOT occur, we're root, accessing our own home directory
             logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
@@ -361,7 +365,7 @@ def main():
     for host in hosts:
 
         oldres = res
-        res = getinfo(res, host)
+        res = getinfo(res, host, opts.dry_run)
         if not res:
             logger.error("Couldn't collect info for host %s" % (host))
             failed_hosts.append(host)
@@ -408,12 +412,15 @@ def main():
         if newres:
             for us in group:
                 try:
-                    store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
-                    nagios_user_count += 1
+                    if not opts.dry_run:
+                        store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
+                        nagios_user_count += 1
+                    else:
+                        logger.info("Dry run: skipping stroing pickle files at user (%s, %s) home." % (us, group))
                 except (UserStorageError, FileStoreError, FileMoveError), err:
                     logger.error('Could not store pickle file for user %s' % (us))
                     nagios_no_store += 1
-                    pass # just keep going, trying to store the rest of the data
+                    pass  # just keep going, trying to store the rest of the data
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
