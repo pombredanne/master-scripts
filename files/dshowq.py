@@ -1,51 +1,55 @@
 #!/usr/bin/python
+##
+#
+# Copyright 2009-2012 Ghent University
+# Copyright 2009-2012 Stijn De Weirdt
+# Copyright 2012 Andy Georges
+#
+# This file is part of the tools originally by the HPC team of
+# Ghent University (http://ugent.be/hpc).
+#
+# This is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation v2.
+##
+"""
+The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
+in the user's home directory to allow faster lookup.
 
+It should run on a regular bass to avoid information to become (too) outdated.
 """
-Collect showq info
-- filter
-- distribute pickle
-"""
+# --------------------------------------------------------------------
 import cPickle
 import grp
-import logging
 import os
 import pwd
 import sys
 import time
-
-import vsc.utils.fs_store as store
-
-from lockfile import LockFailed, NotLocked, NotMyLock
-from vsc.utils.nagios import NagiosReporter
-from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
-from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
-
-import vsc.fancylogger as fancylogger
-
-logger = fancylogger.getLogger(__name__)
-fancylogger.setLogLevel(logging.INFO)
-## need the full utils, not the simple ones
-try:
-    from vsc.ldap.configuration import VscConfiguration
-    from vsc.ldap import utils
-except Exception, err:
-    logger.critical("Can't init ldap utils: %s" % err)
-    sys.exit(1)
-
 from optparse import OptionParser
+
+# --------------------------------------------------------------------
+import vsc.fancylogger as fancylogger
+import vsc.utils.fs_store as store
+from lockfile import LockFailed, NotLocked, NotMyLock
+from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
+from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.utils import LdapQuery
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+
 
 #Constants
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
 NAGIOS_HEADER = 'dshowq'
-NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  ## 15 minutes
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
 # HostsReported HostsUnavailable UserCount UserNoStorePossible
 NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 
-
 DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
 
-opt_parser = OptionParser()
-opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true', help='print out nagios information')
+logger = fancylogger.getLogger(__name__)
+fancylogger.logToScreen(False)
+fancylogger.setLogLevelInfo()
 
 realshowq = '/usr/bin/showq'
 voprefix = 'gvo'
@@ -55,6 +59,7 @@ VSC_INSTALL_USER_ID = 'vsc40003'
 ## all default VOs
 defaultvo = 'gvo00012'
 novos = ('gvo00012', 'gvo00016', 'gvo00017', 'gvo00018')
+
 
 def getinfo(res, host):
     """
@@ -198,7 +203,7 @@ def getout(host):
         # try restoring last known out
         home = pwd.getpwnam('root')[5]
         if not os.path.isdir(home):
-            logger.error("Homedir %s owner %s not found" % (home, owner))
+            logger.error("Homedir %s of root not found" % (home))
             return
 
         dest = "%s/.showq.pickle.cluster_%s" % (home, host)
@@ -207,21 +212,23 @@ def getout(host):
             out = cPickle.load(f)
             f.close()
             return out
-        except Exception , err:
+        except Exception, err:
             logger.error("Failed to load pickle from file %s: %s" % (dest, err))
             return
+
 
 def collectgroups(indiv):
     """
     List of individual users, return list of lists of users in VO (or individuals)
     """
-    ## list of VOs
-    posvos = [ x for x in grp.getgrall() if x[0].startswith(voprefix)]
-    defvo = [ x for x in posvos if x[0] == defaultvo ][0][3]
+    # list of VOs
+    posvos = [x for x in grp.getgrall() if x[0].startswith(voprefix)]
+    defvo = [x for x in posvos if x[0] == defaultvo][0][3]
     found = []
     groups = []
     for us in indiv:
-        if us in found: continue
+        if us in found:
+            continue
         group = [x for x in posvos if (not x[0] in novos) and (us in x[3])]
         if len(group) > 0:
             found += group[0][3]
@@ -234,12 +241,14 @@ def collectgroups(indiv):
 
     return groups
 
+
 def getName(members, uid):
     member = filter(lambda x: x['uid'] == uid, members)
     if member:
         return member[0]['gecos']
     else:
         return "(name not found)"
+
 
 def collectgroupsLDAP(indiv):
     """
@@ -248,7 +257,7 @@ def collectgroupsLDAP(indiv):
     """
     #setdebugloglevel(False)
     vsc_config = VscConfiguration()
-    u = utils.LdapQuery(vsc_config)
+    u = LdapQuery(vsc_config)
 
     ## all sites filter
     ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
@@ -258,16 +267,17 @@ def collectgroupsLDAP(indiv):
     members = u.user_filter_search(filter=ldapf, attributes=['institute', 'uid', 'gecos', 'cn'])
     found = []
     for us in indiv:
-        if us in found: continue
+        if us in found:
+            continue
 
         # find vo of this user
-        vo = filter(lambda x: us in x.get('memberUid',[]), vos)
+        vo = filter(lambda x: us in x.get('memberUid', []), vos)
         if len(vo) == 1:
             # check if for default VO
             if vo[0]['cn'] == defaultvo:
                 found.append(us)
                 name = getName(members, us)
-                userMapsPerVo[us] = {us:name}
+                userMapsPerVo[us] = {us: name}
             else:
                 userMap = {}
                 for uid in vo[0]['memberUid']:
@@ -278,6 +288,7 @@ def collectgroupsLDAP(indiv):
         # ignore users not in any VO (including default VO)
 
     return userMapsPerVo
+
 
 def groupinfo(users, res):
     """
@@ -293,6 +304,7 @@ def groupinfo(users, res):
 
     newres['timeinfo'] = res['timeinfo']
     return newres
+
 
 def groupinfoLDAP(users, res):
     """
@@ -310,8 +322,13 @@ def groupinfoLDAP(users, res):
     return newres
 
 
-if __name__ == '__main__':
+def main():
     # Collect all info
+    opt_parser = OptionParser()
+    opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true',
+                          help='print out nagios information')
+    opt_parser.add_option("-d", "--dry-run", dest="dry_run", default=False, action="store_true",
+                          help="Do not make any updates whatsoever.")
 
     (opts, args) = opt_parser.parse_args(sys.argv)
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
@@ -372,7 +389,12 @@ if __name__ == '__main__':
         os.system(cmd)
     except Exception, err:
         logger.critical("Cannot stat the VSC install user (%s) home at %s. Bailing." % (VSC_INSTALL_USER_ID, vsc_install_user_home))
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - cannot install home for user: %s" % (vsc_install_user_home))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
+                              NagiosResult("cannot access home for user: %s" % (vsc_install_user_home),
+                                           hosts=len(reported_hosts),
+                                           hosts_error=len(failed_hosts),
+                                           stored=0,
+                                           stored_error=0))
         sys.exit(1)
 
     nagios_user_count = 0
@@ -399,13 +421,27 @@ if __name__ == '__main__':
         lockfile.release()
     except NotLocked, err:
         logger.critical('Lock release failed: was not locked.')
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not locked) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
+                              NagiosResult("lock release failed (not locked)",
+                                           hosts=len(reported_hosts),
+                                           hosts_error=len(failed_hosts),
+                                           stored=nagios_user_count,
+                                           stored_error=nagios_no_store))
         sys.exit(1)
     except NotMyLock, err:
         logger.error('Lock release failed: not my lock')
         nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not my lock) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
         sys.exit(1)
 
-    nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (len(failed_hosts), len(reported_hosts), nagios_user_count, nagios_no_store)))
+    nagios_reporter.cache(NAGIOS_EXIT_OK,
+                          NagiosResult("dshowq run successful",
+                                       hosts=len(reported_hosts),
+                                       hosts_error=len(failed_hosts),
+                                       stored=nagios_user_count,
+                                       stored_error=nagios_no_store))
+
     sys.exit(0)
 
+
+if __name__ == '__main__':
+    main()
