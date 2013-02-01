@@ -2,8 +2,6 @@
 ##
 #
 # Copyright 2009-2012 Ghent University
-# Copyright 2009-2012 Stijn De Weirdt
-# Copyright 2012 Andy Georges
 #
 # This file is part of the tools originally by the HPC team of
 # Ghent University (http://ugent.be/hpc).
@@ -15,6 +13,9 @@
 """
 The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
 in the user's home directory to allow faster lookup.
+
+@author Stijn De Weirdt
+@author Andy Georges
 
 It should run on a regular bass to avoid information to become (too) outdated.
 """
@@ -28,11 +29,13 @@ import time
 from optparse import OptionParser
 
 # --------------------------------------------------------------------
+# FIXME: we should move this to use the new fancylogger directly from vsc.utils
 import vsc.fancylogger as fancylogger
 import vsc.utils.fs_store as store
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
@@ -49,7 +52,7 @@ NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
 
 logger = fancylogger.getLogger(__name__)
-fancylogger.logToScreen(True)
+fancylogger.logToScreen(False)
 fancylogger.setLogLevelInfo()
 
 realshowq = '/usr/bin/showq'
@@ -251,45 +254,44 @@ def getName(members, uid):
         return "(name not found)"
 
 
-def collectgroupsLDAP(indiv):
+def collectgroupsLDAP(active_users):
     """
     List of individual users, return list of lists of users in VO (or individuals)
-    Uses LDAP directly
     """
     #setdebugloglevel(False)
     vsc_config = VscConfiguration()
     u = LdapQuery(vsc_config)
 
     ## all sites filter
-    ldapf = InstituteFilter('antwerpen') | InstituteFilter('brussel') | InstituteFilter('gent') | InstituteFilter('leuven')
-    #ldapf = "(|(institute=antwerpen) (institute=brussel) (institute=gent) (institute=leuven))"
+    ldap_filter = InstituteFilter('antwerpen') | InstituteFilter('brussel') | InstituteFilter('gent') | InstituteFilter('leuven')
 
-    userMapsPerVo = {}
-    vos = u.vo_filter_search(ldap_filter=ldapf, attributes=['cn', 'description', 'institute', 'memberUid'])
-    members = u.user_filter_search(ldap_filter=ldapf, attributes=['institute', 'uid', 'gecos', 'cn'])
-    found = []
-    for us in indiv:
-        if us in found:
+    user_maps_per_vo = {}
+
+    # FIXME: workaround until such time as we have decent VO trees in the LDAP, as is expected by the LDAP libs
+    vos = [g for g in VscLdapGroup.lookup(ldap_filter) if g.group_id.startswith('gvo')]
+    members = dict([(u.user_id, u) for u in VscLdapUser.lookup(ldap_filter)])
+    user_to_vo_map = dict([(u, vo) for vo in vos for u in vo.memberUid])
+
+    found = set()
+    for user in active_users:
+        if user in found:
             continue
 
         # find vo of this user
-        vo = filter(lambda x: us in x.get('memberUid', []), vos)
-        if len(vo) == 1:
-            # check if for default VO
-            if vo[0]['cn'] == defaultvo:
-                found.append(us)
-                name = getName(members, us)
-                userMapsPerVo[us] = {us: name}
+        vo = user_to_vo_map.get(user, None)
+        if vo:
+            if vo.group_id == defaultvo:
+                found.add(user)
+                name = members[user].gecos
+                user_maps_per_vo[user] = {user: name}
             else:
-                userMap = {}
-                for uid in vo[0]['memberUid']:
-                    found.append(uid)
-                    name = getName(members, uid)
-                    userMap[uid] = name
-                userMapsPerVo[vo[0]['cn']] = userMap
+                user_map = dict([(uid, members[uid].gecos) for uid in vo.memberUid])
+                for uid in user_map:
+                    found.add(uid)
+                user_maps_per_vo[vo.group_id] = user_map
         # ignore users not in any VO (including default VO)
 
-    return userMapsPerVo
+    return user_maps_per_vo
 
 
 def groupinfo(users, res):
@@ -421,7 +423,7 @@ def main():
                         store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
                         nagios_user_count += 1
                     else:
-                        logger.info("Dry run: skipping stroing pickle files at user (%s, %s) home." % (us, group))
+                        logger.info("Dry run: skipping storing pickle files at user (%s, %s) home." % (us, group))
                 except (UserStorageError, FileStoreError, FileMoveError), err:
                     logger.error('Could not store pickle file for user %s' % (us))
                     nagios_no_store += 1
