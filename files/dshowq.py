@@ -270,7 +270,7 @@ def get_showq_output(host, dry_run=False):
         store_pickle_cluster_file(host, out, dry_run)
         return out
     else:
-        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files: %s" % (exe))
+        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files" % (exe))
         return load_pickle_cluster_file(host)
 
 
