@@ -38,6 +38,8 @@ from PBSQuery import PBSQuery
 # --------------------------------------------------------------------
 import vsc.fancylogger as fancylogger
 from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.entities import VscLdapUser
+from vsc.ldap.filter import LdapFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
 from vsc.utils.nagios import NagiosReporter
@@ -46,7 +48,7 @@ from vsc.utils.nagios import NagiosReporter
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
 fancylogger.setLogLevel(logging.DEBUG)
 
-logger = fancylogger.getLogger(name='sync_inactive_users')
+logger = fancylogger.getLogger(name='pbs_check_inactive_user_jobs')
 
 
 LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
@@ -58,7 +60,7 @@ NAGIOS_CHECK_INTERVAL_THRESHOLD = 60 * 60  # 60 minutes
 PBS_CHECK_LOG_FILE = '/var/log/pbs_check_inactive_user_jobs.log'
 
 
-def get_status_users(ldap, status):
+def get_user_with_status(ldap, status):
     """Get the users from the HPC LDAP that match the given status.
 
     @type ldap: vsc.ldap.utils.LdapQuery instance
@@ -68,33 +70,33 @@ def get_status_users(ldap, status):
     """
     logger.info("Retrieving users from the HPC LDAP with status=%s." % (status))
 
-    users = ldap.user_filter_search(filter="status=%s" % status,
-                                    attributes=['cn', 'status'])
+    ldap_filter = LdapFilter("status=%s" % (status))
+    users = VscLdapUser.lookup(ldap_filter)
 
     logger.info("Found %d users in the %s state." % (len(users), status))
-    logger.debug("The following users are in the %s state: %s" % (status, users))
+    logger.debug("The following users are in the %s state: %s" % (status, [u.user_id for u in users]))
 
-    return map(LDAPUser._make, users)
+    return users
 
 
-def get_grace_users(ldap):
+def get_grace_users():
     """Obtain the users that have entered their grace period.
 
     @type ldap: vsc.ldap.utils.LdapQuery instance
 
     @returns: list of LDAPUser elements of users who match the grace status
     """
-    return get_status_users(ldap, 'grace')
+    return get_user_with_status('grace')
 
 
-def get_inactive_users(ldap):
+def get_inactive_users():
     """Obtain the users that have been set to inactive.
 
     @type ldap: vsc.ldap.utils.LdapQuery instance
 
     @returns: list of LDAPUser elements of inactive users
     """
-    return get_status_users(ldap, 'inactive')
+    return get_user_with_status('inactive')
 
 
 def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
@@ -111,8 +113,8 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
 
     @returns: list of jobs that have been removed
     """
-    uids = [u.uid for u in grace_users]
-    uids.extend([u.uid for u in inactive_users])
+    uids = [u.user_id for u in grace_users]
+    uids.extend([u.user_id for u in inactive_users])
 
     jobs_to_remove = []
     for (job_name, job) in jobs.items():
@@ -239,10 +241,10 @@ def main(args):
 
     try:
         vsc_config = VscConfiguration()
-        ldap = LdapQuery(vsc_config)
+        LdapQuery(vsc_config)
 
-        grace_users = get_grace_users(ldap)
-        inactive_users = get_inactive_users(ldap)
+        grace_users = get_user_with_status('grace')
+        inactive_users = get_user_with_status('inactive')
 
         pbs_query = PBSQuery()
 
