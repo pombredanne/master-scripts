@@ -25,11 +25,9 @@ This script is running on the masters, which are at Python 2.6.x.
 """
 
 # --------------------------------------------------------------------
-import logging
 import socket
 import sys
 import time
-from collections import namedtuple
 from optparse import OptionParser
 
 # --------------------------------------------------------------------
@@ -39,19 +37,16 @@ from PBSQuery import PBSQuery
 import vsc.fancylogger as fancylogger
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapUser
-from vsc.ldap.filter import LdapFilter
+from vsc.ldap.filters import LdapFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
-from vsc.utils.nagios import NagiosReporter
+from vsc.utils.nagios import NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
 
 
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
-fancylogger.setLogLevel(logging.DEBUG)
+fancylogger.setLogLevelDebug()
 
 logger = fancylogger.getLogger(name='pbs_check_inactive_user_jobs')
-
-
-LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
 
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/pbs_check_inactive_user_jobs.nagios.pickle'
 NAGIOS_HEADER = 'pbs_check_inactive_user_jobs'
@@ -66,7 +61,7 @@ def get_user_with_status(ldap, status):
     @type ldap: vsc.ldap.utils.LdapQuery instance
     @type status: string represeting a valid status in the HPC LDAP
 
-    @returns: list of LDAPUser nametuples of matching users.
+    @returns: list of VscLdapUser nametuples of matching users.
     """
     logger.info("Retrieving users from the HPC LDAP with status=%s." % (status))
 
@@ -79,26 +74,6 @@ def get_user_with_status(ldap, status):
     return users
 
 
-def get_grace_users():
-    """Obtain the users that have entered their grace period.
-
-    @type ldap: vsc.ldap.utils.LdapQuery instance
-
-    @returns: list of LDAPUser elements of users who match the grace status
-    """
-    return get_user_with_status('grace')
-
-
-def get_inactive_users():
-    """Obtain the users that have been set to inactive.
-
-    @type ldap: vsc.ldap.utils.LdapQuery instance
-
-    @returns: list of LDAPUser elements of inactive users
-    """
-    return get_user_with_status('inactive')
-
-
 def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
     """Determine the queued jobs for users in grace or inactive states.
 
@@ -108,8 +83,8 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
            sooner than a person becomes inactive, a gracing user might still make
            a succesfull submission that gets started.
     @type jobs: dictionary of all jobs known to PBS, indexed by PBS job name
-    @type grace_users: list of LDAPUser namedtuples of users in grace
-    @type inactive_users: list of LDAPUser namedtuples of users who are inactive
+    @type grace_users: list of VscLdapUser of users in grace
+    @type inactive_users: list of VscLdapUser of users who are inactive
 
     @returns: list of jobs that have been removed
     """
@@ -235,9 +210,9 @@ def main(args):
         sys.exit(0)  # not reached
 
     if options.debug:
-        fancylogger.setLogLevel(logging.DEBUG)
+        fancylogger.setLogLevelDebug()
     else:
-        fancylogger.setLogLevel(logging.INFO)
+        fancylogger.setLogLevelInfo()
 
     try:
         vsc_config = VscConfiguration()
@@ -259,13 +234,13 @@ def main(args):
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
         logger.error("Something went wrong: {err}".format(err=err))
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
-        sys.exit(NagiosReporter.NAGIOS_EXIT_CRITICAL)
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
+        sys.exit(NAGIOS_EXIT_CRITICAL)
 
     if len(removed_queued) > 0 or len(removed_running) > 0:
         nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL grace or inactive user jobs queud: {queued}, running: {running} | G={queued} R={running}".format(grace=len(removed_queued), running=len(remove_running_jobs)))
     else:
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
+        nagios_reporter.cache(NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
 
 
 if __name__ == '__main__':
