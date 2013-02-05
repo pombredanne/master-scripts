@@ -440,7 +440,10 @@ def main():
     try:
         vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
         cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
-        os.system(cmd)
+        if not opts.dry_run:
+            os.system(cmd)
+        else:
+            logger.info("DRY RUN: not execution stat command of install user directory to force automount.")
     except Exception, err:
         logger.critical("Cannot stat the VSC install user (%s) home at %s. Bailing." % (VSC_INSTALL_USER_ID, vsc_install_user_home))
         nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
