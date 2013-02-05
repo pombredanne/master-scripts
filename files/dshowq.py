@@ -27,6 +27,7 @@ import pwd
 import sys
 import time
 from optparse import OptionParser
+from subprocess import Popen, PIPE
 
 # --------------------------------------------------------------------
 # FIXME: we should move this to use the new fancylogger directly from vsc.utils
@@ -67,24 +68,29 @@ novos = ('gvo00012', 'gvo00016', 'gvo00017', 'gvo00018')
 
 def getinfo(res, host, dry_run=False):
     """
-    Execute showq -v
-    - parse into fields
-    - add timestamp
+    Parse the showq information for the given host .
+
+    This function calls the actual showq command on the target host and parses the resulting
+    XML into a python dictionary. A timestamp is added, representing the time at which the data
+    was retrieved.
+
+    @type res: dictionary
+    @type host: string
+
+    @param res: data we already retrieved for the other hosts
+    @param host: the host we target in this call
+
+    @returns res: updated dictionary with the showq information.
     """
 
-    out = getout(host, dry_run)
+    out = get_showq_output(host, dry_run)
+
     if not out:
         # Failure, do nothing
         logger.error("ERROR: Failed to get output from real showq.")
         return
-    res = parseshowqxml(res, host, out)
-    # don't check, empty when there are no jobs (which is ok)
-    #if not res:
-    #    print "ERROR: Failed to parse XML obtained from showq."
-        # Failure, do nothing
-    #    return
 
-    ## add timestamp to res
+    res = parseshowqxml(res, host, out)
     res['timeinfo'] = time.time()
 
     return res
@@ -93,6 +99,14 @@ def getinfo(res, host, dry_run=False):
 def parseshowqxml(res, host, txt):
     """
     Parse showq --xml output
+
+    @type res: dictionary
+    @type host: string
+
+    @param res: current dictionary woth the parsed outut for other hosts
+    @param host: the name of the cluster we target
+
+    @returns res: updated dictionary with the showq information for this host.
 
     <job AWDuration="3931" Account="gvo00000" Class="short" DRMJID="123456788.master.gengar.gent.vsc"
     EEDuration="1278479828" Group="vsc40000" JobID="123456788" JobName="job.sh" MasterHost="node129"
@@ -116,11 +130,11 @@ def parseshowqxml(res, host, txt):
         job = {}
         user = j.getAttribute('User')
         state = j.getAttribute('State')
-        if not res.has_key(user):
+        if not user in res:
             res[user] = {}
-        if not res[user].has_key(host):
+        if not host in res[user]:
             res[user][host] = {}
-        if not res[user][host].has_key(state):
+        if not state in res[user][host]:
             res[user][host][state] = []
 
         for n in mand:
@@ -158,29 +172,16 @@ def parseshowqxml(res, host, txt):
     return res
 
 
-def getout(host, dry_run=False):
-    if host in ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]:
-        if host == "gengar":
-            exe = "%s --xml --host=master2.gengar.gent.vsc" % (realshowq)
-        if host == "gastly":
-            exe = "%s --xml --host=master3.gastly.gent.vsc" % (realshowq)
-        if host == "haunter":
-            exe = "%s --xml --host=master5.haunter.gent.vsc" % (realshowq)
-        if host == "gulpin":
-            exe="%s --xml --host=master9.gulpin.gent.vsc" % (realshowq)
-        if host == "dugtrio":
-            exe="%s --xml --host=master11.dugtrio.gent.vsc" % (realshowq)
-        if host == "raichu":
-            exe = "%s --xml --host=master13.raichu.gent.vsc" % (realshowq)
-    else:
-        if not host:
-            exe = "%s --xml" % realshowq
-        else:
-            logger.error("Unknown host specified: %s" % host)
-            sys.exit(0)
+def run_and_collect(command):
+    """Execute the command and get the resulting stdout and stderr.
 
-    from subprocess import Popen, PIPE
-    p = Popen(exe, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
+    @type command: string
+
+    @param command: the command to execute on the shell.
+
+    @returns: a tuple(output, error) or None when the command fails
+    """
+    p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
     out = ''
     err = ''
     while True:
@@ -190,35 +191,87 @@ def getout(host, dry_run=False):
             err += e
         except:
             break
+
     if p.returncode == 0:
+        return (out, err)
+    else:
+        return None
+
+
+def store_pickle_cluster_file(host, output, dry_run=False):
+    """Store the result of the showq command in the relevant pickle file.
+
+    @type output: string
+
+    @param output: showq output information
+    """
+    try:
+        if not dry_run:
+            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % (host), output)
+        else:
+            logger.info("Dry run: skipping actually storing pickle files for cluster data")
+    except (UserStorageError, FileStoreError, FileMoveError), err:
+        # these should NOT occur, we're root, accessing our own home directory
+        logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
+
+
+def load_pickle_cluster_file(host):
+    """Load the data from the pickled files.
+
+    @type host: string
+
+    @param host: cluster for which we load data
+
+    @returns: representation of the showq output.
+    """
+    home = pwd.getpwnam('root')[5]
+
+    if not os.path.isdir(home):
+        logger.error("Homedir %s of root not found" % (home))
+        return None
+
+    source = "%s/.showq.pickle.cluster_%s" % (home, host)
+
+    try:
+        f = open(source)
+        out = cPickle.load(f)
+        f.close()
+        return out
+    except Exception, err:
+        logger.error("Failed to load pickle from file %s: %s" % (source, err))
+        return None
+
+
+def get_showq_output(host, dry_run=False):
+
+    host_masters = {
+        'gengar': 'master2',
+        'gastly': 'master3',
+        'haunter': 'master5',
+        'gulpin': 'master9',
+        'dugtrio': 'master11',
+        'raichu': 'master13',
+        }
+
+    if host in host_masters:
+        exe = "%s --xml --host=%s.%s.gent.vsc" % (realshowq, host_masters[host], host)
+    elif host:
+        exe = "%s --xml" % realshowq
+    else:
+        logger.error("Unknown host specified: %s" % host)
+        sys.exit(0)
+
+    result = run_and_collect(exe)
+
+    if result:
         logger.info("Subprocess %s ran OK, storing resulting data in pickle files" % (exe))
         # create backup of out, in case future showq commands fail
-        try:
-            if not dry_run:
-                store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % host, out)
-            else:
-                logger.info("Dry run: skipping actually storing picke files for cluster data")
-        except (UserStorageError, FileStoreError, FileMoveError), err:
-            # these should NOT occur, we're root, accessing our own home directory
-            logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
+        (out, err) = result
+        store_pickle_cluster_file(host, out, dry_run)
         return out
     else:
         logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files: %s" % (exe, err))
-        # try restoring last known out
-        home = pwd.getpwnam('root')[5]
-        if not os.path.isdir(home):
-            logger.error("Homedir %s of root not found" % (home))
-            return
-
-        dest = "%s/.showq.pickle.cluster_%s" % (home, host)
-        try:
-            f = open(dest)
-            out = cPickle.load(f)
-            f.close()
-            return out
-        except Exception, err:
-            logger.error("Failed to load pickle from file %s: %s" % (dest, err))
-            return
+        return load_pickle_cluster_file(host)
 
 
 def collectgroups(indiv):
@@ -281,6 +334,7 @@ def collectgroupsLDAP(active_users):
         vo = user_to_vo_map.get(user, None)
         if vo:
             if vo.group_id == defaultvo:
+                logger.debug("user %s belongs to the default vo %s" % (user, vo.group_id))
                 found.add(user)
                 name = members[user].gecos
                 user_maps_per_vo[user] = {user: name}
@@ -289,41 +343,30 @@ def collectgroupsLDAP(active_users):
                 for uid in user_map:
                     found.add(uid)
                 user_maps_per_vo[vo.group_id] = user_map
+                logger.debug("added userMap for the vo %s" % (vo.group_id))
         # ignore users not in any VO (including default VO)
 
     return user_maps_per_vo
 
 
-def groupinfo(users, res):
+def filter_info_for_group(users, queue_information):
     """
-    For list of users, return filtered data
-    """
-    newres = {}
-    for us in users:
-        if res.has_key(us):
-            newres[us] = res[us]
+    @type users: list of strings
+    @type queue_information: dictionary
 
-    if len(newres) == 0:
+    @param users: VSC user IDs
+    @param queue_information: the showq information for all users
+
+    @returns: dictionary with the queue information for each of the given users.
+    """
+
+    filtered_queue_information = dict([(user_id, queue_information[user_id]) for user_id in users if user_id in queue_information])
+
+    if len(filtered_queue_information) == 0:
         return
 
-    newres['timeinfo'] = res['timeinfo']
-    return newres
-
-
-def groupinfoLDAP(users, res):
-    """
-    For list of users, return filtered data
-    """
-    newres = {}
-    for us in users.keys():
-        if res.has_key(us):
-            newres[us] = res[us]
-
-    if len(newres) == 0:
-        return
-
-    newres['timeinfo'] = res['timeinfo']
-    return newres
+    filtered_queue_information['timeinfo'] = queue_information['timeinfo']
+    return filtered_queue_information
 
 
 def main():
@@ -366,17 +409,17 @@ def main():
 
     logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
 
-    res = {}
+    queue_information = {}
 
     hosts = ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]
     for host in hosts:
 
-        oldres = res
-        res = getinfo(res, host, opts.dry_run)
-        if not res:
+        previous_queue_information = queue_information
+        queue_information = getinfo(queue_information, host, opts.dry_run)
+        if not queue_information:
             logger.error("Couldn't collect info for host %s" % (host))
             failed_hosts.append(host)
-            res = oldres
+            queue_information = previous_queue_information
             continue
         else:
             reported_hosts.append(host)
@@ -387,7 +430,7 @@ def main():
     # - for all active users, get their VOs
     # - for those groups, get all users
     # - make list of VOs and of individual users (ie default VO)
-    activeusers = res.keys()
+    activeusers = queue_information.keys()
     groups = collectgroupsLDAP(activeusers)
 
     # force mounting the home directories for the ghent users
@@ -414,13 +457,14 @@ def main():
         # Filter and pickle results
         # - per VO
         # - per user
-        newres = groupinfoLDAP(group, res)
+        filtered_queue_information = filter_info_for_group(group, queue_information)
+        logger.debug("filtered queueu information for group %s: %s" % (group, filtered_queue_information))
 
-        if newres:
+        if filtered_queue_information:
             for us in group:
                 try:
                     if not opts.dry_run:
-                        store.store_pickle_data_at_user(us, '.showq.pickle', (newres, group))
+                        store.store_pickle_data_at_user(us, '.showq.pickle', (filtered_queue_information, group))
                         nagios_user_count += 1
                     else:
                         logger.info("Dry run: skipping storing pickle files at user (%s, %s) home." % (us, group))
