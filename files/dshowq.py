@@ -399,7 +399,7 @@ def main():
         sys.exit(1)
     except LockFileReadError, err:
         logger.critical("Unable to obtain lock: could not read previous lock file %s" % (DSHOWQ_LOCK_FILE))
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("CRITICAL - script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE)))
         sys.exit(1)
 
     failed_hosts = []
