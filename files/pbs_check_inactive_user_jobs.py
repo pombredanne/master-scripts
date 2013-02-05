@@ -55,7 +55,7 @@ NAGIOS_CHECK_INTERVAL_THRESHOLD = 60 * 60  # 60 minutes
 PBS_CHECK_LOG_FILE = '/var/log/pbs_check_inactive_user_jobs.log'
 
 
-def get_user_with_status(ldap, status):
+def get_user_with_status(status):
     """Get the users from the HPC LDAP that match the given status.
 
     @type ldap: vsc.ldap.utils.LdapQuery instance
