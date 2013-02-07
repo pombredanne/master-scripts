@@ -31,7 +31,7 @@ import time
 from optparse import OptionParser
 from lockfile import LockFailed
 
-import vsc.fancylogger as fancylogger
+from vsc import fancylogger
 
 from vsc.exceptions import VscError
 

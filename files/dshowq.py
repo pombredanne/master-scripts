@@ -20,7 +20,7 @@ from vsc.utils.nagios import NagiosReporter
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
 
-import vsc.fancylogger as fancylogger
+from vsc import fancylogger
 
 logger = fancylogger.getLogger(__name__)
 fancylogger.setLogLevel(logging.INFO)

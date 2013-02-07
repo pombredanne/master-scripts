@@ -36,7 +36,7 @@ from optparse import OptionParser
 from PBSQuery import PBSQuery
 
 # --------------------------------------------------------------------
-import vsc.fancylogger as fancylogger
+from vsc import fancylogger
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
