@@ -40,7 +40,7 @@ from vsc.ldap.entities import VscLdapUser
 from vsc.ldap.filters import LdapFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
-from vsc.utils.nagios import NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
+from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
 
 
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
