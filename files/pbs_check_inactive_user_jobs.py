@@ -25,11 +25,9 @@ This script is running on the masters, which are at Python 2.6.x.
 """
 
 # --------------------------------------------------------------------
-import logging
 import socket
 import sys
 import time
-from collections import namedtuple
 from optparse import OptionParser
 
 # --------------------------------------------------------------------
@@ -38,18 +36,17 @@ from PBSQuery import PBSQuery
 # --------------------------------------------------------------------
 from vsc import fancylogger
 from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.entities import VscLdapUser
+from vsc.ldap.filters import LdapFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.mail import VscMail
-from vsc.utils.nagios import NagiosReporter
+from vsc.utils.nagios import NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
 
 
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
-fancylogger.setLogLevel(logging.DEBUG)
+fancylogger.setLogLevelDebug()
 
-logger = fancylogger.getLogger(name='sync_inactive_users')
-
-
-LDAPUser = namedtuple('LDAPUser', ['uid', 'status'])
+logger = fancylogger.getLogger(name='pbs_check_inactive_user_jobs')
 
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/pbs_check_inactive_user_jobs.nagios.pickle'
 NAGIOS_HEADER = 'pbs_check_inactive_user_jobs'
@@ -58,43 +55,23 @@ NAGIOS_CHECK_INTERVAL_THRESHOLD = 60 * 60  # 60 minutes
 PBS_CHECK_LOG_FILE = '/var/log/pbs_check_inactive_user_jobs.log'
 
 
-def get_status_users(ldap, status):
+def get_user_with_status(status):
     """Get the users from the HPC LDAP that match the given status.
 
     @type ldap: vsc.ldap.utils.LdapQuery instance
     @type status: string represeting a valid status in the HPC LDAP
 
-    @returns: list of LDAPUser nametuples of matching users.
+    @returns: list of VscLdapUser nametuples of matching users.
     """
     logger.info("Retrieving users from the HPC LDAP with status=%s." % (status))
 
-    users = ldap.user_filter_search(filter="status=%s" % status,
-                                    attributes=['cn', 'status'])
+    ldap_filter = LdapFilter("status=%s" % (status))
+    users = VscLdapUser.lookup(ldap_filter)
 
     logger.info("Found %d users in the %s state." % (len(users), status))
-    logger.debug("The following users are in the %s state: %s" % (status, users))
+    logger.debug("The following users are in the %s state: %s" % (status, [u.user_id for u in users]))
 
-    return map(LDAPUser._make, users)
-
-
-def get_grace_users(ldap):
-    """Obtain the users that have entered their grace period.
-
-    @type ldap: vsc.ldap.utils.LdapQuery instance
-
-    @returns: list of LDAPUser elements of users who match the grace status
-    """
-    return get_status_users(ldap, 'grace')
-
-
-def get_inactive_users(ldap):
-    """Obtain the users that have been set to inactive.
-
-    @type ldap: vsc.ldap.utils.LdapQuery instance
-
-    @returns: list of LDAPUser elements of inactive users
-    """
-    return get_status_users(ldap, 'inactive')
+    return users
 
 
 def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
@@ -106,13 +83,13 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
            sooner than a person becomes inactive, a gracing user might still make
            a succesfull submission that gets started.
     @type jobs: dictionary of all jobs known to PBS, indexed by PBS job name
-    @type grace_users: list of LDAPUser namedtuples of users in grace
-    @type inactive_users: list of LDAPUser namedtuples of users who are inactive
+    @type grace_users: list of VscLdapUser of users in grace
+    @type inactive_users: list of VscLdapUser of users who are inactive
 
     @returns: list of jobs that have been removed
     """
-    uids = [u.uid for u in grace_users]
-    uids.extend([u.uid for u in inactive_users])
+    uids = [u.user_id for u in grace_users]
+    uids.extend([u.user_id for u in inactive_users])
 
     jobs_to_remove = []
     for (job_name, job) in jobs.items():
@@ -233,16 +210,16 @@ def main(args):
         sys.exit(0)  # not reached
 
     if options.debug:
-        fancylogger.setLogLevel(logging.DEBUG)
+        fancylogger.setLogLevelDebug()
     else:
-        fancylogger.setLogLevel(logging.INFO)
+        fancylogger.setLogLevelInfo()
 
     try:
         vsc_config = VscConfiguration()
-        ldap = LdapQuery(vsc_config)
+        LdapQuery(vsc_config)
 
-        grace_users = get_grace_users(ldap)
-        inactive_users = get_inactive_users(ldap)
+        grace_users = get_user_with_status('grace')
+        inactive_users = get_user_with_status('inactive')
 
         pbs_query = PBSQuery()
 
@@ -257,13 +234,13 @@ def main(args):
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
         logger.error("Something went wrong: {err}".format(err=err))
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
-        sys.exit(NagiosReporter.NAGIOS_EXIT_CRITICAL)
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
+        sys.exit(NAGIOS_EXIT_CRITICAL)
 
     if len(removed_queued) > 0 or len(removed_running) > 0:
         nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL grace or inactive user jobs queud: {queued}, running: {running} | G={queued} R={running}".format(grace=len(removed_queued), running=len(remove_running_jobs)))
     else:
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
+        nagios_reporter.cache(NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
 
 
 if __name__ == '__main__':
