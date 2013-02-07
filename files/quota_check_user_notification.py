@@ -277,7 +277,7 @@ def main(argv):
     except CriticalException, err:
         log.critical("critical exception caught: %s" % (err.message))
         if not opts.dry_run:
-            nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "CRITICAL script failed - %s" % (err.message))
+            nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("CRITICAL script failed - %s" % (err.message)))
         if not opts.dry_run:
             lockfile.release()
         sys.exit(1)
