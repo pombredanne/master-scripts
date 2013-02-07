@@ -253,7 +253,7 @@ def main(argv):
                 if not opts.dry_run:
                     u_storage.store_quota(user)
             except VscError, err:
-                log.error("Could not store data for user %s" % (user.vsc_id))
+                log.error("Could not store data for user %s" % (user.user_id))
                 pass  # we're just moving on, trying the rest of the users. The error will have been logged anyway.
 
         v_storage = VoFsQuotaStorage()
@@ -262,7 +262,7 @@ def main(argv):
                 if not opts.dry_run:
                     v_storage.store_quota(vo)
             except VscError, err:
-                log.error("Could not store vo data for vo %s" % (vo.vo_id))
+                log.error("Could not store vo data for vo %s" % (vo.fileset_id))
                 pass  # we're just moving on, trying the rest of the VOs. The error will have been logged anyway.
 
         if not opts.dry_run:
