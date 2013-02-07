@@ -234,13 +234,20 @@ def main(args):
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
         logger.error("Something went wrong: {err}".format(err=err))
-        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, "Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
+                              NagiosResult("Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE)))
         sys.exit(NAGIOS_EXIT_CRITICAL)
 
     if len(removed_queued) > 0 or len(removed_running) > 0:
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL grace or inactive user jobs queud: {queued}, running: {running} | G={queued} R={running}".format(grace=len(removed_queued), running=len(remove_running_jobs)))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
+                              NagiosResult("grace or inactive user jobs queud",
+                                           queued=len(removed_queued),
+                                           running=len(remove_running_jobs)))
     else:
-        nagios_reporter.cache(NAGIOS_EXIT_OK, "OK no queued or running jobs for grace or inactive users")
+        nagios_reporter.cache(NAGIOS_EXIT_OK,
+                              NagiosResult("no queued or running jobs for grace or inactive users",
+                                           queued=0,
+                                           running=0))
 
 
 if __name__ == '__main__':

@@ -393,11 +393,11 @@ def main():
         lockfile.acquire()
     except LockFailed, err:
         logger.critical('Unable to obtain lock: lock failed')
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_CRITICAL, "CRITICAL - script failed taking lock %s" % (DSHOWQ_LOCK_FILE))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("script failed taking lock %s" % (DSHOWQ_LOCK_FILE)))
         sys.exit(1)
     except LockFileReadError, err:
         logger.critical("Unable to obtain lock: could not read previous lock file %s" % (DSHOWQ_LOCK_FILE))
-        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("CRITICAL - script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE)))
+        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE)))
         sys.exit(1)
 
     failed_hosts = []
@@ -447,12 +447,12 @@ def main():
         nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
                               NagiosResult("cannot access home for user: %s" % (vsc_install_user_home),
                                            hosts=len(reported_hosts),
-                                           hosts_critical=len(failed_hosts),
+                                           hosts_failed=len(failed_hosts),
                                            stored=0,
-                                           stored_critical=0))
+                                           stored_critical=100))
         sys.exit(1)
 
-    nagios_user_count = 0
+    nagios_user_stored = 0
     nagios_no_store = 0
     for group in groups.values():
         # Filter and pickle results
@@ -466,7 +466,7 @@ def main():
                 try:
                     if not opts.dry_run:
                         store.store_pickle_data_at_user(us, '.showq.pickle', (filtered_queue_information, group))
-                        nagios_user_count += 1
+                        nagios_user_stored += 1
                     else:
                         logger.info("Dry run: skipping storing pickle files at user (%s, %s) home." % (us, group))
                 except (UserStorageError, FileStoreError, FileMoveError), err:
@@ -483,21 +483,26 @@ def main():
         nagios_reporter.cache(NAGIOS_EXIT_WARNING,
                               NagiosResult("lock release failed (not locked)",
                                            hosts=len(reported_hosts),
-                                           hosts_critical=len(failed_hosts),
-                                           stored=nagios_user_count,
-                                           stored_critical=nagios_no_store))
+                                           hosts_failed=len(failed_hosts),
+                                           stored=nagios_user_stored,
+                                           not_stored=nagios_no_store))
         sys.exit(1)
     except NotMyLock, err:
         logger.error('Lock release failed: not my lock')
-        nagios_reporter.cache(NagiosReporter.NAGIOS_EXIT_WARNING, "WARNING - lock release fail (not my lock) | %s" % (NAGIOS_REPORT_VALUES_TEMPLATE % (failed_hosts, reported_hosts, nagios_user_count, nagios_no_store)))
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
+                              NagiosResult("WARNING - lock release fail (not my lock)",
+                                           hosts=len(reported_hosts),
+                                           hosts_failed=len(failed_hosts),
+                                           stored=nagios_user_stored,
+                                           not_stored=nagios_no_store))
         sys.exit(1)
 
     nagios_reporter.cache(NAGIOS_EXIT_OK,
                           NagiosResult("dshowq run successful",
                                        hosts=len(reported_hosts),
-                                       hosts_critical=len(failed_hosts),
-                                       stored=nagios_user_count,
-                                       stored_critical=nagios_no_store))
+                                       hosts_failed=len(failed_hosts),
+                                       stored=nagios_user_stored,
+                                       not_stored=nagios_no_store))
 
     sys.exit(0)
 
