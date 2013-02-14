@@ -3,13 +3,13 @@
 
 Summary: UGent HPC scripts that should be deployed on the masters
 Name: master_scripts
-Version: 0.5
+Version: 0.6
 Release: 1
 License: GPL
 Group: Applications/System
 Source: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
-Requires: python-vsc-base, python-vsc-core, python-vsc-packages-lockfile, python-vsc-ldap, python-vsc-ldap-extension, pbs_python >= 4.3
+Requires: python-vsc-base, python-vsc-core, python-vsc-packages-lockfile, python-vsc-ldap, python-vsc-ldap-extension, pbs_python >= 4.3, python-vsc-filesystems
 BuildArch: noarch
 
 %description
