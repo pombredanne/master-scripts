@@ -2,8 +2,6 @@
 # -*- coding: latin-1 -*-
 #
 # Copyright 2009-2012 Ghent University
-# Copyright 2009-2012 Stijn De Weirdt
-# Copyright 2012 Andy Georges
 #
 # This file is part of VSC-tools,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
