@@ -36,7 +36,7 @@ import time
 import vsc.utils.fs_store as store
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
-from vsc.administration.user import VscUser, MukUser
+from vsc.administration.user import MukUser
 from vsc.jobs.moab import showq, ShowqInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
@@ -215,12 +215,13 @@ def get_pickle_path(location, user_id):
     @param location: indication of the user accesible storage spot to use, e.g., home or scratch
     @param user_id: VSC user ID
 
-    @returns: string representing the directory where the pickle file should be stored.
+    @returns: tuple of (string representing the directory where the pickle file should be stored,
+                        the relevant storing function in vsc.utils.fs_store).
     """
     if location == 'home':
-        return VscUser(user_id).pickle_path()
+        return ('.showq.pickle', store.store_pickle_data_at_user_home)
     elif location == 'scratch':
-        return MukUser(user_id).pickle_path()
+        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
 
 
 def lock_or_bork(lockfile, nagios_reporter):
@@ -270,7 +271,7 @@ def main():
     # Note: debug option is provided by generaloption
     # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
     options = {
-        'nagios': ('print out nagios information', None, 'store_true', False, 'n'),
+        'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
         'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
@@ -316,20 +317,22 @@ def main():
     nagios_user_count = 0
     nagios_no_store = 0
 
+    LdapQuery(VscConfiguration())
+
     for user in target_users:
 
         if not opts.options.dry_run:
             try:
-                path = get_pickle_path(opts.options.location)
+                (path, store) = get_pickle_path(opts.options.location, user)
                 user_queue_information = target_queue_information[user]
                 user_queue_information['timeinfo'] = timeinfo
-                store.store_pickle_data_at_user(user, os.path.join(path, '.showq.pickle'), user_queue_information)
+                store(user, path, user_queue_information)
                 nagios_user_count += 1
             except (UserStorageError, FileStoreError, FileMoveError), err:
                 logger.error("Could not store pickle file for user %s" % (user))
                 nagios_no_store += 1
         else:
-            logger.info("Dry run, not actually storing data for user %s at scratch fileset" % (user))
+            logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
             logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
