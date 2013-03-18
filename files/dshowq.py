@@ -1,4 +1,5 @@
 #!/usr/bin/python
+
 ##
 #
 # Copyright 2009-2012 Ghent University
@@ -35,12 +36,14 @@ import time
 import vsc.utils.fs_store as store
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
-from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
+from vsc.administration.user import VscUser, MukUser
 from vsc.jobs.moab import showq, ShowqInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
+import  vsc.utils.generaloption
+from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
@@ -53,12 +56,12 @@ NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
 # HostsReported HostsUnavailable UserCount UserNoStorePossible
 NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 
-DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
+DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid_test.lock'
 
 DEFAULT_VO = 'gvo00012'
 
 logger = fancylogger.getLogger(__name__)
-fancylogger.logToScreen(False)
+fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
 
 
@@ -119,7 +122,7 @@ def get_showq_information(opts):
         master = opts.configfile_parser.get(host, "master")
         showq_path = opts.configfile_parser.get(host, "showq_path")
 
-        host_queue_information = showq(showq_path, ["--host=%s" % (master, host)], xml=True, process=True)
+        host_queue_information = showq(showq_path, host, ["--host=%s" % (master)], xml=True, process=True)
 
         if not host_queue_information:
             failed_hosts.append(host)
@@ -203,6 +206,23 @@ def determine_target_information(information, active_users, queue_information):
         pass
 
 
+def get_pickle_path(location, user_id):
+    """Determine the path (directory) where the pickle file qith the queue information should be stored.
+
+    @type location: string
+    @type user_id: string
+
+    @param location: indication of the user accesible storage spot to use, e.g., home or scratch
+    @param user_id: VSC user ID
+
+    @returns: string representing the directory where the pickle file should be stored.
+    """
+    if location == 'home':
+        return VscUser(user_id).pickle_path()
+    elif location == 'scratch':
+        return MukUser(user_id).pickle_path()
+
+
 def lock_or_bork(lockfile, nagios_reporter):
     """Take the lock on the given lockfile.
 
@@ -250,11 +270,12 @@ def main():
     # Note: debug option is provided by generaloption
     # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
     options = {
-        'nagios': ('print out nagion information', bool, 'store', False, 'n'),
+        'nagios': ('print out nagios information', None, 'store_true', False, 'n'),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
-        'information': ('the sort of information to store: user, vo, project', None, 'extend', ['user']),
+        'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
+        'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
         'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
-        'dry-run': ('do not make any updates whatsoever', bool, 'store', False),
+        'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
 
     opts = simple_option(options)
@@ -274,17 +295,23 @@ def main():
     tf = "%Y-%m-%d %H:%M:%S"
 
     logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.debug("generaloption location: %s" % (vsc.utils.generaloption.__file__))
 
     (queue_information, reported_hosts, failed_hosts) = get_showq_information(opts)
     timeinfo = time.time()
 
     active_users = queue_information.keys()
 
+    logger.debug("Active users: %s" % (active_users))
+    logger.debug("Queue information: %s" % (queue_information))
+
     # We need to determine which users should get an updated pickle. This depends on
     # - the active user set
     # - the information we want to provide on the cluster(set) where this script runs
     # At the same time, we need to determine the job information each user gets to see
     (target_users, target_queue_information) = determine_target_information(opts.options.information, active_users, queue_information)
+
+    logger.debug("Target users: %s" % (target_users))
 
     nagios_user_count = 0
     nagios_no_store = 0
@@ -293,24 +320,17 @@ def main():
 
         if not opts.options.dry_run:
             try:
-
-                store.store_pickle_data_at_user(user, '.showq.pickle', user_queue_information)
+                path = get_pickle_path(opts.options.location)
+                user_queue_information = target_queue_information[user]
+                user_queue_information['timeinfo'] = timeinfo
+                store.store_pickle_data_at_user(user, os.path.join(path, '.showq.pickle'), user_queue_information)
                 nagios_user_count += 1
             except (UserStorageError, FileStoreError, FileMoveError), err:
                 logger.error("Could not store pickle file for user %s" % (user))
                 nagios_no_store += 1
         else:
             logger.info("Dry run, not actually storing data for user %s at scratch fileset" % (user))
-            logger.debug("Dry run, queue information for user %s is %s" % (user, user_queue_information))
-
-
-        (nagios_user_count, nagios_no_store) = store_active_users(timeinfo, activeusers)
-        (nagios_user_count, nagios_no_store) = store_active_users_by_vo(timeinfo, activeusers)
-        (nagios_user_count, nagios_no_store) = store_active_users_by_project(timeinfo, activeusers)
-
-
-
-
+            logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
 
     logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
