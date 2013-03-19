@@ -11,8 +11,9 @@
 # the Free Software Foundation v2.
 ##
 """
-The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
-in the user's home directory to allow faster lookup.
+- The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
+in the user's home directory to allow faster lookup. On the Tier-1 machine it stores the
+showq pickle files in the users personal fileset.
 
 @author Stijn De Weirdt
 @author Andy Georges
@@ -29,15 +30,15 @@ import time
 # --------------------------------------------------------------------
 # FIXME: we should move this to use the new fancylogger directly from vsc.utils
 import vsc.utils.fs_store as store
+import vsc.utils.generaloption
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
 from vsc.administration.user import MukUser
-from vsc.jobs.moab import showq, ShowqInfo
+from vsc.jobs.moab.showq import showq, ShowqInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
-import  vsc.utils.generaloption
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
