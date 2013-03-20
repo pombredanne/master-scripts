@@ -189,7 +189,7 @@ def determine_target_information(information, active_users, queue_information):
 
     if information == 'user':
         user_info = dict([(u, {u: ""}) for u in active_users])  # FIXME: faking it
-        return (active_users, queue_information, user_info)
+        return (active_users, dict([(user, {user: queue_information[user]}) for user in active_users]), user_info)
     elif information == 'vo':
         (all_target_users, user_maps_per_vo) = collect_vo_ldap(active_users)
 
