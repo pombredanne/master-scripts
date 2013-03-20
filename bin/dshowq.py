@@ -188,7 +188,8 @@ def determine_target_information(information, active_users, queue_information):
     """Determine for the given information type, what should be stored for which users."""
 
     if information == 'user':
-        return (active_users, queue_information)
+        user_info = dict([(u.uid, u.gecos) for u in [VscLdapUser(uid) for uid in active_users]])
+        return (active_users, queue_information, user_info)
     elif information == 'vo':
         (all_target_users, user_maps_per_vo) = collect_vo_ldap(active_users)
 
@@ -197,9 +198,9 @@ def determine_target_information(information, active_users, queue_information):
             filtered_queue_information = dict([(user_id, queue_information[user_id]) for user_id in vo if user_id in queue_information])
             target_queue_information.update(dict([(user_id, filtered_queue_information) for user_id in vo]))
 
-        return (all_target_users, target_queue_information)
+        return (all_target_users, target_queue_information, user_maps_per_vo)
     elif information == 'project':
-        pass
+        return (None, None, None)
 
 
 def get_pickle_path(location, user_id):
@@ -306,7 +307,9 @@ def main():
     # - the active user set
     # - the information we want to provide on the cluster(set) where this script runs
     # At the same time, we need to determine the job information each user gets to see
-    (target_users, target_queue_information) = determine_target_information(opts.options.information, active_users, queue_information)
+    (target_users, target_queue_information, user_map) = determine_target_information(opts.options.information,
+                                                                                      active_users,
+                                                                                      queue_information)
 
     logger.debug("Target users: %s" % (target_users))
 
@@ -316,13 +319,12 @@ def main():
     LdapQuery(VscConfiguration())
 
     for user in target_users:
-
         if not opts.options.dry_run:
             try:
                 (path, store) = get_pickle_path(opts.options.location, user)
                 user_queue_information = target_queue_information[user]
                 user_queue_information['timeinfo'] = timeinfo
-                store(user, path, user_queue_information)
+                store(user, path, (user_queue_information, user_map[user]))
                 nagios_user_count += 1
             except (UserStorageError, FileStoreError, FileMoveError), err:
                 logger.error("Could not store pickle file for user %s" % (user))
