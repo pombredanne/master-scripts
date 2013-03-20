@@ -188,7 +188,7 @@ def determine_target_information(information, active_users, queue_information):
     """Determine for the given information type, what should be stored for which users."""
 
     if information == 'user':
-        user_info = dict([(u.uid, u.gecos) for u in [VscLdapUser(uid) for uid in active_users]])
+        user_info = dict([(u, {u: ""}) for u in active_users])  # FIXME: faking it
         return (active_users, queue_information, user_info)
     elif information == 'vo':
         (all_target_users, user_maps_per_vo) = collect_vo_ldap(active_users)
