@@ -11,8 +11,9 @@
 # the Free Software Foundation v2.
 ##
 """
-The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
-in the user's home directory to allow faster lookup.
+- The dshowq scripts collects showq information from all Tier-2 clusters and distributes it
+in the user's home directory to allow faster lookup. On the Tier-1 machine it stores the
+showq pickle files in the users personal fileset.
 
 @author Stijn De Weirdt
 @author Andy Georges
@@ -21,25 +22,28 @@ It should run on a regular bass to avoid information to become (too) outdated.
 """
 # --------------------------------------------------------------------
 import cPickle
-import grp
 import os
 import pwd
 import sys
 import time
-from optparse import OptionParser
-from subprocess import Popen, PIPE
 
 # --------------------------------------------------------------------
-from vsc import fancylogger
+# FIXME: we should move this to use the new fancylogger directly from vsc.utils
 import vsc.utils.fs_store as store
+import vsc.utils.generaloption
 from lockfile import LockFailed, NotLocked, NotMyLock
-from vsc.exceptions import UserStorageError, FileStoreError, FileMoveError
+from vsc import fancylogger
+from vsc.administration.user import MukUser
+from vsc.jobs.moab.showq import showq, ShowqInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
+from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
+from vsc.utils.generaloption import simple_option
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+
 
 #Constants
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
@@ -50,150 +54,11 @@ NAGIOS_REPORT_VALUES_TEMPLATE = "HR=%d, HU=%d, UC=%d, NS=%d"
 
 DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
 
+DEFAULT_VO = 'gvo00012'
+
 logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(False)
 fancylogger.setLogLevelInfo()
-
-realshowq = '/usr/bin/showq'
-voprefix = 'gvo'
-
-VSC_INSTALL_USER_ID = 'vsc40003'
-
-## all default VOs
-defaultvo = 'gvo00012'
-novos = ('gvo00012', 'gvo00016', 'gvo00017', 'gvo00018')
-
-
-def getinfo(res, host, dry_run=False):
-    """
-    Parse the showq information for the given host .
-
-    This function calls the actual showq command on the target host and parses the resulting
-    XML into a python dictionary. A timestamp is added, representing the time at which the data
-    was retrieved.
-
-    @type res: dictionary
-    @type host: string
-
-    @param res: data we already retrieved for the other hosts
-    @param host: the host we target in this call
-
-    @returns res: updated dictionary with the showq information.
-    """
-
-    out = get_showq_output(host, dry_run)
-
-    if not out:
-        # Failure, do nothing
-        logger.error("ERROR: Failed to get output from real showq.")
-        return
-
-    res = parseshowqxml(res, host, out)
-    res['timeinfo'] = time.time()
-
-    return res
-
-
-def parseshowqxml(res, host, txt):
-    """
-    Parse showq --xml output
-
-    @type res: dictionary
-    @type host: string
-
-    @param res: current dictionary woth the parsed outut for other hosts
-    @param host: the name of the cluster we target
-
-    @returns res: updated dictionary with the showq information for this host.
-
-    <job AWDuration="3931" Account="gvo00000" Class="short" DRMJID="123456788.master.gengar.gent.vsc"
-    EEDuration="1278479828" Group="vsc40000" JobID="123456788" JobName="job.sh" MasterHost="node129"
-    PAL="gengar" ReqAWDuration="7200" ReqProcs="8" RsvStartTime="1278480000" RunPriority="663"
-    StartPriority="663" StartTime="127848000" StatPSDed="31467.120000" StatPSUtl="3404.405600"
-    State="Running" SubmissionTime="1278470000" SuspendDuration="0" User="vsc40000">
-    <job Account="gvo00000" BlockReason="IdlePolicy" Class="short" DRMJID="1231456789.master.gengar.gent.vsc"
-    Description="job 123456789 violates idle HARD MAXIPROC limit of 800 for user vsc40000  (Req: 8  InUse: 800)"
-    EEDuration="1278486173" Group="vsc40023" JobID="1859934" JobName="job.sh" ReqAWDuration="7200" ReqProcs="8"
-    StartPriority="660" StartTime="0" State="Idle" SubmissionTime="1278480000" SuspendDuration="0" User="vsc40000"></job>
-    """
-    mand = ['ReqProcs', 'SubmissionTime', 'JobID', 'DRMJID', 'Class']
-    running = ['MasterHost']
-    idle = []
-    blocked = ['BlockReason', 'Description']
-
-    import xml.dom.minidom
-    doc = xml.dom.minidom.parseString(txt)
-
-    for j in doc.getElementsByTagName("job"):
-        job = {}
-        user = j.getAttribute('User')
-        state = j.getAttribute('State')
-        if not user in res:
-            res[user] = {}
-        if not host in res[user]:
-            res[user][host] = {}
-        if not state in res[user][host]:
-            res[user][host][state] = []
-
-        for n in mand:
-            job[n] = j.getAttribute(n)
-            if not job[n]:
-                logger.error("Failed to find mandatory name %s in %s" % (n, j.toxml()))
-                job.pop(n)
-        if state in ('Running'):
-            for n in running:
-                job[n] = j.getAttribute(n)
-                if not job[n]:
-                    logger.error("Failed to find running name %s in %s" % (n, j.toxml()))
-                    job.pop(n)
-        else:
-            if j.hasAttribute('BlockReason'):
-                if state == 'Idle':
-                    ## redefine state
-                    state = 'IdleBlocked'
-                    if not res[user][host].has_key(state):
-                        res[user][host][state] = []
-                for n in blocked:
-                    job[n] = j.getAttribute(n)
-                    if not job[n]:
-                        logger.error("Failed to find blocked name %s in %s" % (n, j.toxml()))
-                        job.pop(n)
-            else:
-                for n in idle:
-                    job[n] = j.getAttribute(n)
-                    if not job[n]:
-                        logger.error("Failed to find idle name %s in %s" % (n, j.toxml()))
-                        job.pop(n)
-
-        res[user][host][state].append(job)
-
-    return res
-
-
-def run_and_collect(command):
-    """Execute the command and get the resulting stdout and stderr.
-
-    @type command: string
-
-    @param command: the command to execute on the shell.
-
-    @returns: a tuple(output, error) or None when the command fails
-    """
-    p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
-    out = ''
-    err = ''
-    while True:
-        try:
-            o, e = p.communicate()
-            out += o
-            err += e
-        except:
-            break
-
-    if p.returncode == 0:
-        return (out, err)
-    else:
-        return None
 
 
 def store_pickle_cluster_file(host, output, dry_run=False):
@@ -240,155 +105,130 @@ def load_pickle_cluster_file(host):
         return None
 
 
-def get_showq_output(host, dry_run=False):
+def get_showq_information(opts):
+    """Accumulate the showq information for the users on the given hosts."""
 
-    host_masters = {
-        'gengar': 'master2',
-        'gastly': 'master3',
-        'haunter': 'master5',
-        'gulpin': 'master9',
-        'dugtrio': 'master11',
-        'raichu': 'master13',
-        }
+    queue_information = ShowqInfo()
+    failed_hosts = []
+    reported_hosts = []
 
-    if host in host_masters:
-        exe = "%s --xml --host=%s.%s.gent.vsc" % (realshowq, host_masters[host], host)
-    elif host:
-        exe = "%s --xml" % realshowq
-    else:
-        logger.error("Unknown host specified: %s" % host)
-        sys.exit(0)
+    # Obtain the information from all specified hosts
+    for host in opts.options.hosts:
 
-    result = run_and_collect(exe)
+        master = opts.configfile_parser.get(host, "master")
+        showq_path = opts.configfile_parser.get(host, "showq_path")
 
-    if result:
-        logger.info("Subprocess %s ran OK, storing resulting data in pickle files" % (exe))
-        # create backup of out, in case future showq commands fail
-        (out, err) = result
-        store_pickle_cluster_file(host, out, dry_run)
-        return out
-    else:
-        logger.error("Subprocess %s failed, trying to restore resulting data from previous pickle files" % (exe))
-        return load_pickle_cluster_file(host)
+        host_queue_information = showq(showq_path, host, ["--host=%s" % (master)], xml=True, process=True)
 
+        if not host_queue_information:
+            failed_hosts.append(host)
+            logger.error("Couldn't collect info for host %s" % (host))
+            logger.info("Trying to load cached pickle file for host %s" % (host))
 
-def collectgroups(indiv):
-    """
-    List of individual users, return list of lists of users in VO (or individuals)
-    """
-    # list of VOs
-    posvos = [x for x in grp.getgrall() if x[0].startswith(voprefix)]
-    defvo = [x for x in posvos if x[0] == defaultvo][0][3]
-    found = []
-    groups = []
-    for us in indiv:
-        if us in found:
-            continue
-        group = [x for x in posvos if (not x[0] in novos) and (us in x[3])]
-        if len(group) > 0:
-            found += group[0][3]
-            groups.append(group[0][3])
+            host_queue_information = load_pickle_cluster_file(host)
         else:
-            # If not in VO or default vo, ignore
-            if us in defvo:
-                found.append(us)
-                groups.append([us])
+            store_pickle_cluster_file(host, host_queue_information)
 
-    return groups
+        if not host_queue_information:
+            logger.error("Couldn't load info for host %s" % (host))
+        else:
+            queue_information.update(host_queue_information)
+            reported_hosts.append(host)
 
-
-def getName(members, uid):
-    member = filter(lambda x: x['uid'] == uid, members)
-    if member:
-        return member[0]['gecos']
-    else:
-        return "(name not found)"
+    return (queue_information, reported_hosts, failed_hosts)
 
 
-def collectgroupsLDAP(active_users):
+def collect_vo_ldap(active_users):
+    """Determine which active users are in the same VO.
+
+    @type active_users: list of strings
+
+    @param active_users: the users for which there currently are jobs running
+
+    Generates a mapping between each user that belongs to a VO for which a member has jobs running and the active users
+    from that VO. If the user belongs to the default VO, he cannot see any information of the other users from this VO.
+
+    @return: dict with vo IDs as keys (default VO members are their own VO) and dicts mapping uid to gecos as values.
     """
-    List of individual users, return list of lists of users in VO (or individuals)
-    """
-    #setdebugloglevel(False)
-    vsc_config = VscConfiguration()
-    u = LdapQuery(vsc_config)
-
-    ## all sites filter
+    LdapQuery(VscConfiguration())
     ldap_filter = InstituteFilter('antwerpen') | InstituteFilter('brussel') | InstituteFilter('gent') | InstituteFilter('leuven')
 
-    user_maps_per_vo = {}
-
-    # FIXME: workaround until such time as we have decent VO trees in the LDAP, as is expected by the LDAP libs
     vos = [g for g in VscLdapGroup.lookup(ldap_filter) if g.group_id.startswith('gvo')]
     members = dict([(u.user_id, u) for u in VscLdapUser.lookup(ldap_filter)])
     user_to_vo_map = dict([(u, vo) for vo in vos for u in vo.memberUid])
 
+    user_maps_per_vo = {}
     found = set()
     for user in active_users:
+
+        # If we already have a mapping for this user, we need not add him again
         if user in found:
             continue
 
-        # find vo of this user
+        # find VO of this user
         vo = user_to_vo_map.get(user, None)
         if vo:
-            if vo.group_id == defaultvo:
+            if vo.group_id == DEFAULT_VO:
                 logger.debug("user %s belongs to the default vo %s" % (user, vo.group_id))
                 found.add(user)
                 name = members[user].gecos
                 user_maps_per_vo[user] = {user: name}
             else:
-                user_map = dict([(uid, members[uid].gecos) for uid in vo.memberUid])
+                user_map = dict([(uid, members[uid].gecos) for uid in vo.memberUid and uid in active_users])
                 for uid in user_map:
                     found.add(uid)
                 user_maps_per_vo[vo.group_id] = user_map
                 logger.debug("added userMap for the vo %s" % (vo.group_id))
         # ignore users not in any VO (including default VO)
 
-    return user_maps_per_vo
+    return (found, user_maps_per_vo)
 
 
-def filter_info_for_group(users, queue_information):
+def determine_target_information(information, active_users, queue_information):
+    """Determine for the given information type, what should be stored for which users."""
+
+    if information == 'user':
+        user_info = dict([(u, {u: ""}) for u in active_users])  # FIXME: faking it
+        return (active_users, dict([(user, {user: queue_information[user]}) for user in active_users]), user_info)
+    elif information == 'vo':
+        (all_target_users, user_maps_per_vo) = collect_vo_ldap(active_users)
+
+        target_queue_information = {}
+        for vo in user_maps_per_vo.values():
+            filtered_queue_information = dict([(user_id, queue_information[user_id]) for user_id in vo if user_id in queue_information])
+            target_queue_information.update(dict([(user_id, filtered_queue_information) for user_id in vo]))
+
+        return (all_target_users, target_queue_information, user_maps_per_vo)
+    elif information == 'project':
+        return (None, None, None)
+
+
+def get_pickle_path(location, user_id):
+    """Determine the path (directory) where the pickle file qith the queue information should be stored.
+
+    @type location: string
+    @type user_id: string
+
+    @param location: indication of the user accesible storage spot to use, e.g., home or scratch
+    @param user_id: VSC user ID
+
+    @returns: tuple of (string representing the directory where the pickle file should be stored,
+                        the relevant storing function in vsc.utils.fs_store).
     """
-    @type users: list of strings
-    @type queue_information: dictionary
+    if location == 'home':
+        return ('.showq.pickle', store.store_pickle_data_at_user_home)
+    elif location == 'scratch':
+        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
 
-    @param users: VSC user IDs
-    @param queue_information: the showq information for all users
 
-    @returns: dictionary with the queue information for each of the given users.
+def lock_or_bork(lockfile, nagios_reporter):
+    """Take the lock on the given lockfile.
+
+    If the lock cannot be obtained:
+        - log a critical error
+        - store a critical failure in the nagios cache file
+        - exit the script
     """
-
-    filtered_queue_information = dict([(user_id, queue_information[user_id]) for user_id in users if user_id in queue_information])
-
-    if len(filtered_queue_information) == 0:
-        return
-
-    filtered_queue_information['timeinfo'] = queue_information['timeinfo']
-    return filtered_queue_information
-
-
-def main():
-    # Collect all info
-    opt_parser = OptionParser()
-    opt_parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true',
-                          help='print out nagios information')
-    opt_parser.add_option("", "--dry-run", dest="dry_run", default=False, action="store_true",
-                          help="Do not make any updates whatsoever.")
-    opt_parser.add_option("", "--debug", dest="debug", default=False, action="store_true",
-                          help="Put logging at debug level")
-
-    (opts, args) = opt_parser.parse_args(sys.argv)
-
-    if opts.debug:
-        fancylogger.setLogLevelDebug()
-
-    nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
-    if opts.nagios:
-        logger.debug("Producing Nagios report and exiting.")
-        nagios_reporter.report_and_exit()
-        sys.exit(0)  # not reached
-
-    lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
     try:
         lockfile.acquire()
     except LockFailed, err:
@@ -400,109 +240,115 @@ def main():
         nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE)))
         sys.exit(1)
 
-    failed_hosts = []
-    reported_hosts = []
 
-    tf = "%Y-%m-%d %H:%M:%S"
+def release_or_bork(lockfile, nagios_reporter, nagios_result):
+    """ Release the lock on the given lockfile.
 
-    logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
-
-    queue_information = {}
-
-    hosts = ["gengar", "gastly", "haunter", "gulpin", "dugtrio", "raichu"]
-    for host in hosts:
-
-        previous_queue_information = queue_information
-        queue_information = getinfo(queue_information, host, opts.dry_run)
-        if not queue_information:
-            logger.error("Couldn't collect info for host %s" % (host))
-            failed_hosts.append(host)
-            queue_information = previous_queue_information
-            continue
-        else:
-            reported_hosts.append(host)
-            #lockfile.release()
-            #sys.exit(1)
-
-    # Collect all user/VO maps of active users
-    # - for all active users, get their VOs
-    # - for those groups, get all users
-    # - make list of VOs and of individual users (ie default VO)
-    activeusers = queue_information.keys()
-    groups = collectgroupsLDAP(activeusers)
-
-    # force mounting the home directories for the ghent users
-    # FIXME: this works for the current setup, might be an issue if we change things.
-    #        see ticket #987
-    vsc_install_user_home = None
-    try:
-        vsc_install_user_home = pwd.getpwnam(VSC_INSTALL_USER_ID)[5]
-        cmd = "sudo -u %s stat %s" % (VSC_INSTALL_USER_ID, vsc_install_user_home)
-        if not opts.dry_run:
-            os.system(cmd)
-        else:
-            logger.info("DRY RUN: not execution stat command of install user directory to force automount.")
-    except Exception, err:
-        logger.critical("Cannot stat the VSC install user (%s) home at %s. Bailing." % (VSC_INSTALL_USER_ID, vsc_install_user_home))
-        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
-                              NagiosResult("cannot access home for user: %s" % (vsc_install_user_home),
-                                           hosts=len(reported_hosts),
-                                           hosts_failed=len(failed_hosts),
-                                           stored=0,
-                                           stored_critical=100))
-        sys.exit(1)
-
-    nagios_user_stored = 0
-    nagios_no_store = 0
-    for group in groups.values():
-        # Filter and pickle results
-        # - per VO
-        # - per user
-        filtered_queue_information = filter_info_for_group(group, queue_information)
-        logger.debug("filtered queueu information for group %s: %s" % (group, filtered_queue_information))
-
-        if filtered_queue_information:
-            for us in group:
-                try:
-                    if not opts.dry_run:
-                        store.store_pickle_data_at_user(us, '.showq.pickle', (filtered_queue_information, group))
-                        nagios_user_stored += 1
-                    else:
-                        logger.info("Dry run: skipping storing pickle files at user (%s, %s) home." % (us, group))
-                except (UserStorageError, FileStoreError, FileMoveError), err:
-                    logger.error('Could not store pickle file for user %s' % (us))
-                    nagios_no_store += 1
-                    pass  # just keep going, trying to store the rest of the data
-
-    logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
+    If the lock cannot be released:
+        - log a critcal error
+        - store a critical failure in the nagios cache file
+        - exit the script
+    """
 
     try:
         lockfile.release()
     except NotLocked, err:
         logger.critical('Lock release failed: was not locked.')
-        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
-                              NagiosResult("lock release failed (not locked)",
-                                           hosts=len(reported_hosts),
-                                           hosts_failed=len(failed_hosts),
-                                           stored=nagios_user_stored,
-                                           not_stored=nagios_no_store))
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING, nagios_result)
         sys.exit(1)
     except NotMyLock, err:
         logger.error('Lock release failed: not my lock')
-        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
-                              NagiosResult("WARNING - lock release fail (not my lock)",
-                                           hosts=len(reported_hosts),
-                                           hosts_failed=len(failed_hosts),
-                                           stored=nagios_user_stored,
-                                           not_stored=nagios_no_store))
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING, nagios_result)
         sys.exit(1)
 
+
+def main():
+    # Collect all info
+
+    # Note: debug option is provided by generaloption
+    # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
+    options = {
+        'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
+        'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
+        'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
+        'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
+        'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
+    }
+
+    opts = simple_option(options)
+
+    if opts.options.debug:
+        fancylogger.setLogLevelDebug()
+
+    nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
+    if opts.options.nagios:
+        logger.debug("Producing Nagios report and exiting.")
+        nagios_reporter.report_and_exit()
+        sys.exit(0)  # not reached
+
+    lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
+    lock_or_bork(lockfile, nagios_reporter)
+
+    tf = "%Y-%m-%d %H:%M:%S"
+
+    logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.debug("generaloption location: %s" % (vsc.utils.generaloption.__file__))
+
+    (queue_information, reported_hosts, failed_hosts) = get_showq_information(opts)
+    timeinfo = time.time()
+
+    active_users = queue_information.keys()
+
+    logger.debug("Active users: %s" % (active_users))
+    logger.debug("Queue information: %s" % (queue_information))
+
+    # We need to determine which users should get an updated pickle. This depends on
+    # - the active user set
+    # - the information we want to provide on the cluster(set) where this script runs
+    # At the same time, we need to determine the job information each user gets to see
+    (target_users, target_queue_information, user_map) = determine_target_information(opts.options.information,
+                                                                                      active_users,
+                                                                                      queue_information)
+
+    logger.debug("Target users: %s" % (target_users))
+
+    nagios_user_count = 0
+    nagios_no_store = 0
+
+    LdapQuery(VscConfiguration())
+
+    for user in target_users:
+        if not opts.options.dry_run:
+            try:
+                (path, store) = get_pickle_path(opts.options.location, user)
+                user_queue_information = target_queue_information[user]
+                user_queue_information['timeinfo'] = timeinfo
+                store(user, path, (user_queue_information, user_map[user]))
+                nagios_user_count += 1
+            except (UserStorageError, FileStoreError, FileMoveError), err:
+                logger.error("Could not store pickle file for user %s" % (user))
+                nagios_no_store += 1
+        else:
+            logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
+            logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
+
+    logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
+
+    #FIXME: this still looks fugly
+    bork_result = NagiosResult("lock release failed",
+                               hosts=len(reported_hosts),
+                               hosts_critical=len(failed_hosts),
+                               stored=nagios_user_count,
+                               stored_critical=nagios_no_store)
+    release_or_bork(lockfile, nagios_reporter, bork_result)
+
     nagios_reporter.cache(NAGIOS_EXIT_OK,
-                          NagiosResult("dshowq run successful",
+                          NagiosResult("run successful",
                                        hosts=len(reported_hosts),
-                                       hosts_failed=len(failed_hosts),
-                                       stored=nagios_user_stored,
-                                       not_stored=nagios_no_store))
+                                       hosts_critical=len(failed_hosts),
+                                       stored=nagios_user_count,
+                                       stored_critical=nagios_no_store))
 
     sys.exit(0)
 

@@ -32,7 +32,7 @@ from distutils.core import setup
 import glob
 
 setup(name="master_scripts",
-      version="1.0",
+      version="1.1",
       description="UGent HPC scripts that should be deployed on the masters",
       long_description="""Scripts that run on one or more masters
  - GPFS quota checking and caching
