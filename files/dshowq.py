@@ -57,7 +57,7 @@ DSHOWQ_LOCK_FILE = '/var/run/dshowq_tpid.lock'
 DEFAULT_VO = 'gvo00012'
 
 logger = fancylogger.getLogger(__name__)
-fancylogger.logToScreen(False)
+fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
 
 
