@@ -22,7 +22,7 @@ import vsc.utils.generaloption
 from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
 from vsc.administration.user import MukUser
-from vsc.jobs.moab.showq import showq, ShowqInfo
+from vsc.jobs.moab.checkjob import checkjob, checkjobInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
@@ -33,9 +33,63 @@ from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIO
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
 
 #Constants
-NAGIOS_CHECK_FILENAME = '/var/log/pickles/dshowq.nagios.pickle'
+NAGIOS_CHECK_FILENAME = '/var/log/pickles/dcheckjob.nagios.pickle'
 NAGIOS_HEADER = 'dcheckjob'
 NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
+
+DCHECKJOB_LOCK_FILE = '/var/run/dcheckjob_tpid.lock'
+
+
+#FIXME: this is almost completely common with dshowq pickle cache storage
+def store_pickle_cluster_file(host, output, dry_run=False):
+    """Store the result of the showq command in the relevant pickle file.
+
+    @type output: string
+
+    @param output: showq output information
+    """
+    try:
+        if not dry_run:
+            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % (host), output)
+        else:
+            logger.info("Dry run: skipping actually storing pickle files for cluster data")
+    except (UserStorageError, FileStoreError, FileMoveError), err:
+        # these should NOT occur, we're root, accessing our own home directory
+        logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
+
+
+# FIXME: This is almost completely the same as dshowq
+def get_checkjob_information(opts):
+    """Accumulate the checkjob information for the users on the given hosts."""
+
+    queue_information = checkjobInfo()
+    failed_hosts = []
+    reported_hosts = []
+
+    # Obtain the information from all specified hosts
+    for host in opts.options.hosts:
+
+        master = opts.configfile_parser.get(host, "master")
+        checkjob_path = opts.configfile_parser.get(host, "checkjob_path")
+
+        host_queue_information = checkjob(checkjob_path, host, ["--host=%s" % (master)], xml=True, process=True)
+
+        if not host_queue_information:
+            failed_hosts.append(host)
+            logger.error("Couldn't collect info for host %s" % (host))
+            logger.info("Trying to load cached pickle file for host %s" % (host))
+
+            host_queue_information = load_pickle_cluster_file(host)
+        else:
+            store_pickle_cluster_file(host, host_queue_information)
+
+        if not host_queue_information:
+            logger.error("Couldn't load info for host %s" % (host))
+        else:
+            queue_information.update(host_queue_information)
+            reported_hosts.append(host)
+
+    return (queue_information, reported_hosts, failed_hosts)
 
 
 def main():
@@ -44,7 +98,7 @@ def main():
     # Note: debug option is provided by generaloption
     # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
     options = {
-        'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'nagios': ('print out nagios information', None, 'store_true', False, 'n'),
         'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
         'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
@@ -66,7 +120,7 @@ def main():
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
-    lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
+    lockfile = TimestampedPidLockfile(CHECKJOB_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
 
     tf = "%Y-%m-%d %H:%M:%S"
@@ -110,7 +164,7 @@ def main():
             logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
             logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
 
-    logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.info("dcheckjob.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
     #FIXME: this still looks fugly
     bork_result = NagiosResult("lock release failed",
