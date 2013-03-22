@@ -35,7 +35,7 @@ from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
 from vsc.administration.user import MukUser
 from vsc.utils.lock import lock_or_bork, release_or_bork
-from vsc.jobs.moab.showq import showq, ShowqInfo
+from vsc.jobs.moab.showq import Showq, ShowqInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
@@ -60,83 +60,6 @@ DEFAULT_VO = 'gvo00012'
 logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
-
-
-def store_pickle_cluster_file(host, output, dry_run=False):
-    """Store the result of the showq command in the relevant pickle file.
-
-    @type output: string
-
-    @param output: showq output information
-    """
-    try:
-        if not dry_run:
-            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % (host), output)
-        else:
-            logger.info("Dry run: skipping actually storing pickle files for cluster data")
-    except (UserStorageError, FileStoreError, FileMoveError), err:
-        # these should NOT occur, we're root, accessing our own home directory
-        logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
-
-
-def load_pickle_cluster_file(host):
-    """Load the data from the pickled files.
-
-    @type host: string
-
-    @param host: cluster for which we load data
-
-    @returns: representation of the showq output.
-    """
-    home = pwd.getpwnam('root')[5]
-
-    if not os.path.isdir(home):
-        logger.error("Homedir %s of root not found" % (home))
-        return None
-
-    source = "%s/.showq.pickle.cluster_%s" % (home, host)
-
-    try:
-        f = open(source)
-        out = cPickle.load(f)
-        f.close()
-        return out
-    except Exception, err:
-        logger.error("Failed to load pickle from file %s: %s" % (source, err))
-        return None
-
-
-def get_showq_information(opts):
-    """Accumulate the showq information for the users on the given hosts."""
-
-    queue_information = ShowqInfo()
-    failed_hosts = []
-    reported_hosts = []
-
-    # Obtain the information from all specified hosts
-    for host in opts.options.hosts:
-
-        master = opts.configfile_parser.get(host, "master")
-        showq_path = opts.configfile_parser.get(host, "showq_path")
-
-        host_queue_information = showq(showq_path, host, ["--host=%s" % (master)], xml=True, process=True)
-
-        if not host_queue_information:
-            failed_hosts.append(host)
-            logger.error("Couldn't collect info for host %s" % (host))
-            logger.info("Trying to load cached pickle file for host %s" % (host))
-
-            host_queue_information = load_pickle_cluster_file(host)
-        else:
-            store_pickle_cluster_file(host, host_queue_information)
-
-        if not host_queue_information:
-            logger.error("Couldn't load info for host %s" % (host))
-        else:
-            queue_information.update(host_queue_information)
-            reported_hosts.append(host)
-
-    return (queue_information, reported_hosts, failed_hosts)
 
 
 def collect_vo_ldap(active_users):
@@ -204,6 +127,7 @@ def determine_target_information(information, active_users, queue_information):
         return (None, None, None)
 
 
+# FIXME: common
 def get_pickle_path(location, user_id):
     """Determine the path (directory) where the pickle file qith the queue information should be stored.
 
@@ -255,7 +179,18 @@ def main():
     logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
     logger.debug("generaloption location: %s" % (vsc.utils.generaloption.__file__))
 
-    (queue_information, reported_hosts, failed_hosts) = get_showq_information(opts)
+    clusters = {}
+    for host in opts.options.hosts:
+        master = opts.configfile_parser.get(host, "master")
+        showq_path = opts.configfile_parser.get(host, "showq_path")
+        clusters[host] = {
+            'master': master,
+            'showq_path': showq_path
+        }
+
+    showq = Showq(clusters, opts.options.dry_run)
+
+    (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
     timeinfo = time.time()
 
     active_users = queue_information.keys()
