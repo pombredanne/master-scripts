@@ -40,56 +40,22 @@ NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
 DCHECKJOB_LOCK_FILE = '/var/run/dcheckjob_tpid.lock'
 
 
-#FIXME: this is almost completely common with dshowq pickle cache storage
-def store_pickle_cluster_file(host, output, dry_run=False):
-    """Store the result of the showq command in the relevant pickle file.
+def get_pickle_path(location, user_id):
+    """Determine the path (directory) where the pickle file qith the queue information should be stored.
 
-    @type output: string
+    @type location: string
+    @type user_id: string
 
-    @param output: showq output information
+    @param location: indication of the user accesible storage spot to use, e.g., home or scratch
+    @param user_id: VSC user ID
+
+    @returns: tuple of (string representing the directory where the pickle file should be stored,
+                        the relevant storing function in vsc.utils.fs_store).
     """
-    try:
-        if not dry_run:
-            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % (host), output)
-        else:
-            logger.info("Dry run: skipping actually storing pickle files for cluster data")
-    except (UserStorageError, FileStoreError, FileMoveError), err:
-        # these should NOT occur, we're root, accessing our own home directory
-        logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
-
-
-# FIXME: This is almost completely the same as dshowq
-def get_checkjob_information(opts):
-    """Accumulate the checkjob information for the users on the given hosts."""
-
-    queue_information = checkjobInfo()
-    failed_hosts = []
-    reported_hosts = []
-
-    # Obtain the information from all specified hosts
-    for host in opts.options.hosts:
-
-        master = opts.configfile_parser.get(host, "master")
-        checkjob_path = opts.configfile_parser.get(host, "checkjob_path")
-
-        host_queue_information = checkjob(checkjob_path, host, ["--host=%s" % (master)], xml=True, process=True)
-
-        if not host_queue_information:
-            failed_hosts.append(host)
-            logger.error("Couldn't collect info for host %s" % (host))
-            logger.info("Trying to load cached pickle file for host %s" % (host))
-
-            host_queue_information = load_pickle_cluster_file(host)
-        else:
-            store_pickle_cluster_file(host, host_queue_information)
-
-        if not host_queue_information:
-            logger.error("Couldn't load info for host %s" % (host))
-        else:
-            queue_information.update(host_queue_information)
-            reported_hosts.append(host)
-
-    return (queue_information, reported_hosts, failed_hosts)
+    if location == 'home':
+        return ('.showq.pickle', store.store_pickle_data_at_user_home)
+    elif location == 'scratch':
+        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
 
 
 def main():
@@ -133,29 +99,18 @@ def main():
     active_users = queue_information.keys()
 
     logger.debug("Active users: %s" % (active_users))
-    logger.debug("Queue information: %s" % (queue_information))
-
-    # We need to determine which users should get an updated pickle. This depends on
-    # - the active user set
-    # - the information we want to provide on the cluster(set) where this script runs
-    # At the same time, we need to determine the job information each user gets to see
-    (target_users, target_queue_information, user_map) = determine_target_information(active_users,
-                                                                                      queue_information)
-
-    logger.debug("Target users: %s" % (target_users))
+    logger.debug("Checkjob information: %s" % (queue_information))
 
     nagios_user_count = 0
     nagios_no_store = 0
 
-    LdapQuery(VscConfiguration())
-
-    for user in target_users:
+    for user in acrtive_users:
         if not opts.options.dry_run:
             try:
                 (path, store) = get_pickle_path(opts.options.location, user)
-                user_queue_information = target_queue_information[user]
+                user_queue_information = queue_information[user]
                 user_queue_information['timeinfo'] = timeinfo
-                store(user, path, (user_queue_information, user_map[user]))
+                store(user, path, user_queue_information)
                 nagios_user_count += 1
             except (UserStorageError, FileStoreError, FileMoveError), err:
                 logger.error("Could not store pickle file for user %s" % (user))
