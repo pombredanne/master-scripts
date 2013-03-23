@@ -185,7 +185,7 @@ def main():
         showq_path = opts.configfile_parser.get(host, "showq_path")
         clusters[host] = {
             'master': master,
-            'showq_path': showq_path
+            'path': showq_path
         }
 
     showq = Showq(clusters, opts.options.dry_run)
