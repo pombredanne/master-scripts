@@ -16,28 +16,30 @@ users pickle directory.
 
 @author Andy Georges
 """
+import os
+import sys
+import time
 
 import vsc.utils.fs_store as store
-import vsc.utils.generaloption
-from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
 from vsc.administration.user import MukUser
-from vsc.jobs.moab.checkjob import checkjob, checkjobInfo
-from vsc.ldap.configuration import VscConfiguration
-from vsc.ldap.entities import VscLdapGroup, VscLdapUser
-from vsc.ldap.filters import InstituteFilter
-from vsc.ldap.utils import LdapQuery
+from vsc.jobs.moab.checkjob import Checkjob, CheckjobInfo
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
-from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
-from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+from vsc.utils.lock import lock_or_bork, release_or_bork
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
 #Constants
 NAGIOS_CHECK_FILENAME = '/var/log/pickles/dcheckjob.nagios.pickle'
 NAGIOS_HEADER = 'dcheckjob'
-NAGIOS_CHECK_INTERVAL_THRESHOLD = 15 * 60  # 15 minutes
+NAGIOS_CHECK_INTERVAL_THRESHOLD = 30 * 60  # 30 minutes
 
 DCHECKJOB_LOCK_FILE = '/var/run/dcheckjob_tpid.lock'
+
+logger = fancylogger.getLogger(__name__)
+fancylogger.logToScreen(True)
+fancylogger.setLogLevelInfo()
 
 
 def get_pickle_path(location, user_id):
@@ -80,44 +82,54 @@ def main():
 
     nagios_reporter = NagiosReporter(NAGIOS_HEADER,
                                      opts.options.nagios_check_filename,
-                                     opt.options.nagios_check_interval_threshold)
+                                     opts.options.nagios_check_interval_threshold)
     if opts.options.nagios:
         logger.debug("Producing Nagios report and exiting.")
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
-    lockfile = TimestampedPidLockfile(CHECKJOB_LOCK_FILE)
+    lockfile = TimestampedPidLockfile(DCHECKJOB_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
 
     tf = "%Y-%m-%d %H:%M:%S"
 
     logger.info("checkjob.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
 
-    (queue_information, reported_hosts, failed_hosts) = get_checkjob_information(opts)
+    clusters = {}
+    for host in opts.options.hosts:
+        master = opts.configfile_parser.get(host, "master")
+        showq_path = opts.configfile_parser.get(host, "showq_path")
+        clusters[host] = {
+            'master': master,
+            'path': showq_path
+        }
+
+    checkjob = Checkjob(clusters, opts.options.dry_run, cache_pickle=True)
+
+    (job_information, reported_hosts, failed_hosts) = checkjob(opts)
     timeinfo = time.time()
 
-    active_users = queue_information.keys()
+    active_users = job_information.keys()
 
     logger.debug("Active users: %s" % (active_users))
-    logger.debug("Checkjob information: %s" % (queue_information))
+    logger.debug("Checkjob information: %s" % (job_information))
 
     nagios_user_count = 0
     nagios_no_store = 0
 
-    for user in acrtive_users:
+    for user in active_users:
         if not opts.options.dry_run:
             try:
                 (path, store) = get_pickle_path(opts.options.location, user)
-                user_queue_information = queue_information[user]
-                user_queue_information['timeinfo'] = timeinfo
-                store(user, path, user_queue_information)
+                user_queue_information = CheckjobInfo({user: job_information[user]})
+                store(user, path, (timeinfo, user_queue_information))
                 nagios_user_count += 1
-            except (UserStorageError, FileStoreError, FileMoveError), err:
+            except (UserStorageError, FileStoreError, FileMoveError), _:
                 logger.error("Could not store pickle file for user %s" % (user))
                 nagios_no_store += 1
         else:
             logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
-            logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
+            logger.debug("Dry run, queue information for user %s is %s" % (user, job_information[user]))
 
     logger.info("dcheckjob.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
 
@@ -138,11 +150,5 @@ def main():
 
     sys.exit(0)
 
-
 if __name__ == '__main__':
     main()
-
-
-
-
-
