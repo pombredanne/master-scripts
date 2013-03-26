@@ -21,9 +21,7 @@ showq pickle files in the users personal fileset.
 It should run on a regular bass to avoid information to become (too) outdated.
 """
 # --------------------------------------------------------------------
-import cPickle
 import os
-import pwd
 import sys
 import time
 
@@ -31,19 +29,18 @@ import time
 # FIXME: we should move this to use the new fancylogger directly from vsc.utils
 import vsc.utils.fs_store as store
 import vsc.utils.generaloption
-from lockfile import LockFailed, NotLocked, NotMyLock
 from vsc import fancylogger
-from vsc.administration.user import MukUser
+from vsc.administration.user import MukUser, VscUser, cluster_user_pickle_store_map, cluster_user_pickle_location_map
 from vsc.utils.lock import lock_or_bork, release_or_bork
-from vsc.jobs.moab.showq import Showq, ShowqInfo
+from vsc.jobs.moab.showq import Showq
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
-from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
-from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
 
 #Constants
@@ -140,10 +137,7 @@ def get_pickle_path(location, user_id):
     @returns: tuple of (string representing the directory where the pickle file should be stored,
                         the relevant storing function in vsc.utils.fs_store).
     """
-    if location == 'home':
-        return ('.showq.pickle', store.store_pickle_data_at_user_home)
-    elif location == 'scratch':
-        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
+    return (cluster_user_pickle_location_map[location], cluster_user_pickle_store_map[location])
 
 
 def main():
@@ -153,6 +147,8 @@ def main():
     # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
     options = {
         'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
+        'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
         'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
@@ -188,7 +184,7 @@ def main():
             'path': showq_path
         }
 
-    showq = Showq(clusters, opts.options.dry_run)
+    showq = Showq(clusters, opts.options.dry_run, cache_pickle=True)
 
     (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
     timeinfo = time.time()
