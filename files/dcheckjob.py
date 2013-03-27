@@ -54,7 +54,7 @@ def get_pickle_path(location, user_id):
     @returns: tuple of (string representing the directory where the pickle file should be stored,
                         the relevant storing function in vsc.utils.fs_store).
     """
-    return (os.path.join(cluster_user_pickle_location_map[location](user_id).pickle_path(), ".showq.pickle"), cluster_user_pickle_store_map[location])
+    return (os.path.join(cluster_user_pickle_location_map[location](user_id).pickle_path(), ".checkjob.pickle"), cluster_user_pickle_store_map[location])
 
 
 def main():
