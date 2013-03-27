@@ -11,7 +11,7 @@
 # the Free Software Foundation v2.
 ##
 """
-dcheckjob.py requests all idle (blocked) jobs from Moab and stores the result in a JSON structure in each
+dcheckjob.py requests all idle (blocked) jobs from Moab and stores the result in a CheckjobInfo structure in each
 users pickle directory.
 
 @author Andy Georges
@@ -67,7 +67,6 @@ def main():
         'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
         'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
-        'checkjob_path': ('the path to the real shpw executable',  None, 'store', ''),
         'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
