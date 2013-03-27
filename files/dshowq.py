@@ -137,7 +137,7 @@ def get_pickle_path(location, user_id):
     @returns: tuple of (string representing the directory where the pickle file should be stored,
                         the relevant storing function in vsc.utils.fs_store).
     """
-    return (cluster_user_pickle_location_map[location], cluster_user_pickle_store_map[location])
+    return (os.path.join(cluster_user_pickle_location_map[location](user_id).pickle_path(), ".showq.pickle"), cluster_user_pickle_store_map[location])
 
 
 def main():
@@ -152,7 +152,7 @@ def main():
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
         'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
-        'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
+        'location': ('the location for storing the pickle file: gengar, muk', str, 'store', 'gengar'),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
 
@@ -184,7 +184,7 @@ def main():
             'path': showq_path
         }
 
-    showq = Showq(clusters, opts.options.dry_run, cache_pickle=True)
+    showq = Showq(clusters, cache_pickle=True, dry_run=opts.options.dry_run)
 
     (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
     timeinfo = time.time()
