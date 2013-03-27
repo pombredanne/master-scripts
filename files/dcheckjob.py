@@ -20,9 +20,8 @@ import os
 import sys
 import time
 
-import vsc.utils.fs_store as store
-from vsc import fancylogger
-from vsc.administration.user import MukUser
+from vsc.utils import fancylogger
+from vsc.administration.user import MukUser, cluster_user_pickle_location_map, cluster_user_pickle_store_map
 from vsc.jobs.moab.checkjob import Checkjob, CheckjobInfo
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
