@@ -41,7 +41,7 @@ logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
 
-
+# FIXME: common
 def get_pickle_path(location, user_id):
     """Determine the path (directory) where the pickle file qith the queue information should be stored.
 
@@ -54,10 +54,7 @@ def get_pickle_path(location, user_id):
     @returns: tuple of (string representing the directory where the pickle file should be stored,
                         the relevant storing function in vsc.utils.fs_store).
     """
-    if location == 'home':
-        return ('.showq.pickle', store.store_pickle_data_at_user_home)
-    elif location == 'scratch':
-        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
+    return (os.path.join(cluster_user_pickle_location_map[location](user_id).pickle_path(), ".showq.pickle"), cluster_user_pickle_store_map[location])
 
 
 def main():
