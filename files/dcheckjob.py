@@ -93,10 +93,10 @@ def main():
     clusters = {}
     for host in opts.options.hosts:
         master = opts.configfile_parser.get(host, "master")
-        showq_path = opts.configfile_parser.get(host, "showq_path")
+        checkjob_path = opts.configfile_parser.get(host, "checkjob_path")
         clusters[host] = {
             'master': master,
-            'path': showq_path
+            'path': checkjob_path
         }
 
     checkjob = Checkjob(clusters, opts.options.dry_run, cache_pickle=True)
