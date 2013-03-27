@@ -101,7 +101,7 @@ def main():
 
     checkjob = Checkjob(clusters, cache_pickle=True, dry_run=True)
 
-    (job_information, reported_hosts, failed_hosts) = checkjob(opts)
+    (job_information, reported_hosts, failed_hosts) = checkjob.get_moab_command_information()
     timeinfo = time.time()
 
     active_users = job_information.keys()
