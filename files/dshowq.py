@@ -26,10 +26,8 @@ import sys
 import time
 
 # --------------------------------------------------------------------
-# FIXME: we should move this to use the new fancylogger directly from vsc.utils
-import vsc.utils.fs_store as store
 import vsc.utils.generaloption
-from vsc import fancylogger
+from vsc.utils import fancylogger
 from vsc.administration.user import MukUser, VscUser, cluster_user_pickle_store_map, cluster_user_pickle_location_map
 from vsc.utils.lock import lock_or_bork, release_or_bork
 from vsc.jobs.moab.showq import Showq
