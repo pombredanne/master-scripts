@@ -99,7 +99,7 @@ def main():
             'path': checkjob_path
         }
 
-    checkjob = Checkjob(clusters, opts.options.dry_run, cache_pickle=True)
+    checkjob = Checkjob(clusters, cache_pickle=True, opts.options.dry_run=True)
 
     (job_information, reported_hosts, failed_hosts) = checkjob(opts)
     timeinfo = time.time()
