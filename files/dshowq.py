@@ -28,7 +28,7 @@ import time
 # --------------------------------------------------------------------
 import vsc.utils.generaloption
 from vsc.utils import fancylogger
-from vsc.administration.user import MukUser, VscUser, cluster_user_pickle_store_map, cluster_user_pickle_location_map
+from vsc.administration.user import cluster_user_pickle_store_map, cluster_user_pickle_location_map
 from vsc.utils.lock import lock_or_bork, release_or_bork
 from vsc.jobs.moab.showq import Showq
 from vsc.ldap.configuration import VscConfiguration
@@ -148,7 +148,6 @@ def main():
         'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
         'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
-        'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
         'location': ('the location for storing the pickle file: gengar, muk', str, 'store', 'gengar'),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
