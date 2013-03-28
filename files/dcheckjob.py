@@ -86,9 +86,7 @@ def main():
     lockfile = TimestampedPidLockfile(DCHECKJOB_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
 
-    tf = "%Y-%m-%d %H:%M:%S"
-
-    logger.info("checkjob.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.info("dcheckjob started a run")
 
     clusters = {}
     for host in opts.options.hosts:
