@@ -23,6 +23,8 @@ import time
 from vsc.utils import fancylogger
 from vsc.administration.user import MukUser, cluster_user_pickle_location_map, cluster_user_pickle_store_map
 from vsc.jobs.moab.checkjob import Checkjob, CheckjobInfo
+from vsc.ldap.configuration import VscConfiguration
+from vsc.ldap.utils import LdapQuery
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
 from vsc.utils.lock import lock_or_bork, release_or_bork
@@ -39,6 +41,7 @@ DCHECKJOB_LOCK_FILE = '/var/run/dcheckjob_tpid.lock'
 logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
+
 
 # FIXME: common
 def get_pickle_path(location, user_id):
@@ -88,6 +91,8 @@ def main():
 
     logger.info("dcheckjob started a run")
 
+    LdapQuery(VscConfiguration())
+
     clusters = {}
     for host in opts.options.hosts:
         master = opts.configfile_parser.get(host, "master")
@@ -124,7 +129,7 @@ def main():
             logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
             logger.debug("Dry run, queue information for user %s is %s" % (user, job_information[user]))
 
-    logger.info("dcheckjob.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.info("dcheckjob run end")
 
     #FIXME: this still looks fugly
     bork_result = NagiosResult("lock release failed",
