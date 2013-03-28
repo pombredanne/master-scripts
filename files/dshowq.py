@@ -20,12 +20,12 @@ showq pickle files in the users personal fileset.
 
 It should run on a regular bass to avoid information to become (too) outdated.
 """
-# --------------------------------------------------------------------
+
 import os
 import sys
 import time
 
-# --------------------------------------------------------------------
+
 import vsc.utils.generaloption
 from vsc.utils import fancylogger
 from vsc.administration.user import cluster_user_pickle_store_map, cluster_user_pickle_location_map
