@@ -17,7 +17,7 @@
 
 from distutils.core import setup
 
-import vsc.install.shared_setup
+import vsc.install.shared_setup as shared_setup
 from vsc.install.shared_setup import ag, sdw, wdp, kh
 
 
@@ -28,7 +28,18 @@ PACKAGE = {
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
     'packages': ['vsc', 'vsc.utils'],
-    'scripts': ['bin/pbs_check_inactive_user-jobs.py', 'bin/dshowq.py', 'bin/quota_check_user_notification.py'],
+    'scripts': ['bin/pbs_check_inactive_user_jobs.py', 'bin/dshowq.py', 'bin/quota_check_user_notification.py'],
+    'install_requires': [
+        'python-vsc-administration >= 0.4',
+        'python-vsc-base >= 1.2',
+        'python-vsc-core',
+        'python-vsc-packages-lockfile',
+        'python-vsc-ldap',
+        'python-vsc-ldap-extension',
+        'pbs_python >= 4.3',
+        'python-vsc-filesystems',
+        'python-vsc-jobs',
+    ]
 }
 
 
