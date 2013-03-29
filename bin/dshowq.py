@@ -273,6 +273,7 @@ def main():
         'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
         'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
+        'ha': ('high-availability master IP address', None, 'store', None),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
 
