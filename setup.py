@@ -21,7 +21,7 @@ from vsc.install.shared_setup import ag, sdw, wdp, kh
 
 PACKAGE = {
     'name': 'master_scripts',
-    'version': '1.3',
+    'version': '1.4',
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
@@ -30,7 +30,7 @@ PACKAGE = {
     'install_requires': [
         'python-vsc-administration >= 0.4',
         'python-vsc-base >= 1.2',
-        'python-vsc-core',
+        'python-vsc-config',
         'python-vsc-packages-lockfile',
         'python-vsc-ldap',
         'python-vsc-ldap-extension',
