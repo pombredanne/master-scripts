@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 ##
 #
 # Copyright 2009-2012 Ghent University
@@ -35,7 +35,7 @@ from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
-from vsc.utils.availability import check_high_availabity_host
+from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
@@ -165,7 +165,7 @@ def main():
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
-    if not check_high_availabity_host(opts.options.ha):
+    if not proceed_on_ha_service(opts.options.ha):
         logger.warning("Not running on the target host in the HA setup. Stopping.")
         nagios_reporter(NAGIOS_EXIT_WARNING,
                         NagiosResult("Not running on the HA master."))
