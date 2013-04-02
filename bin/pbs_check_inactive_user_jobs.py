@@ -24,21 +24,20 @@ Script can be run with the following options:
 This script is running on the masters, which are at Python 2.6.x.
 """
 
-# --------------------------------------------------------------------
 import socket
 import sys
 import time
-from optparse import OptionParser
 
-# --------------------------------------------------------------------
 from PBSQuery import PBSQuery
 
-# --------------------------------------------------------------------
+import vsc.utils.generaloption
 from vsc import fancylogger
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapUser
 from vsc.ldap.filters import LdapFilter
 from vsc.ldap.utils import LdapQuery
+from vsc.utils.availability import check_high_availabity_host
+from vsc.utils.generaloption import simple_option
 from vsc.utils.mail import VscMail
 from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
 
@@ -98,7 +97,7 @@ def remove_queued_jobs(jobs, grace_users, inactive_users, dry_run=True):
             jobs_to_remove.append((job_name, job))
 
     logger.info("Found {queued_count} queued jobs belonging to gracing or inactive users".format(queued_count=len(jobs_to_remove)))
-    logger.debug("These are the jobs names: {job_names}".format(job_names=map(lambda (n, _): n, jobs_to_remove)))
+    logger.debug("These are the jobs names: {job_names}".format(job_names=[n for (n, _) in jobs_to_remove]))
 
     if not dry_run:
         pass
@@ -191,17 +190,14 @@ Your friendly pbs job checking script
 def main(args):
     """Main script."""
 
-    parser = OptionParser()
-    parser.add_option('-d', '--dry-run', dest='dry_run', default=False, action='store_true',
-                      help='Do NOT perform any database actions, simply output what would be done')
-    parser.add_option('', '--debug', dest='debug', default=False, action='store_true',
-                      help='Enable debug output to log.')
-    parser.add_option('-m', '--mail-report', dest='mail', default=False, action='store_true',
-                      help='Send mail to the hpc-admin list with job list from gracing or inactive users')
-    parser.add_option('-n', '--nagios', dest='nagios', default=False, action='store_true',
-                      help='Check the Nagios file and display its contents. Should be used by Icinga.')
-
-    (options, args) = parser.parse_args(args)
+    options = {
+        'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'mail-report': ('mail a report to the hpc-admin list with job list for gracing or inactive users',
+                        None, 'store_true', False),
+        'ha': ('high-availability master IP address', None, 'store', None),
+        'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
+    }
+    opts = simple_option(options)
 
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
 
@@ -209,10 +205,11 @@ def main(args):
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
-    if options.debug:
-        fancylogger.setLogLevelDebug()
-    else:
-        fancylogger.setLogLevelInfo()
+    if not check_high_availabity_host(opts.options.ha):
+        logger.warning("Not running on the target host in the HA setup. Stopping.")
+        nagios_reporter(NAGIOS_EXIT_WARNING,
+                        NagiosResult("Not running on the HA master."))
+        sys.exit(NAGIOS_EXIT_WARNING)
 
     try:
         vsc_config = VscConfiguration()
