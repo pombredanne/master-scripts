@@ -192,6 +192,8 @@ def main(args):
 
     options = {
         'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
+        'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'mail-report': ('mail a report to the hpc-admin list with job list for gracing or inactive users',
                         None, 'store_true', False),
         'ha': ('high-availability master IP address', None, 'store', None),
@@ -205,7 +207,7 @@ def main(args):
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
-    if not check_high_availabity_host(opts.options.ha):
+    if not proceed_on_ha_service(opts.options.ha):
         logger.warning("Not running on the target host in the HA setup. Stopping.")
         nagios_reporter(NAGIOS_EXIT_WARNING,
                         NagiosResult("Not running on the HA master."))
