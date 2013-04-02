@@ -26,7 +26,6 @@ import sys
 import time
 
 
-import vsc.utils.generaloption
 from vsc.utils import fancylogger
 from vsc.administration.user import cluster_user_pickle_store_map, cluster_user_pickle_location_map
 from vsc.utils.lock import lock_or_bork, release_or_bork
@@ -38,7 +37,7 @@ from vsc.ldap.utils import LdapQuery
 from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
-from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
 
@@ -167,17 +166,14 @@ def main():
 
     if not proceed_on_ha_service(opts.options.ha):
         logger.warning("Not running on the target host in the HA setup. Stopping.")
-        nagios_reporter(NAGIOS_EXIT_WARNING,
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
                         NagiosResult("Not running on the HA master."))
         sys.exit(NAGIOS_EXIT_WARNING)
 
     lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
 
-    tf = "%Y-%m-%d %H:%M:%S"
-
-    logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
-    logger.debug("generaloption location: %s" % (vsc.utils.generaloption.__file__))
+    logger.info("starting dshowq run")
 
     clusters = {}
     for host in opts.options.hosts:
@@ -206,8 +202,6 @@ def main():
                                                                                       active_users,
                                                                                       queue_information)
 
-    logger.debug("Target users: %s" % (target_users))
-
     nagios_user_count = 0
     nagios_no_store = 0
 
@@ -228,7 +222,7 @@ def main():
             logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
             logger.debug("Dry run, queue information for user %s is %s" % (user, target_queue_information[user]))
 
-    logger.info("dshowq.py end time: %s" % time.strftime(tf, time.localtime(time.time())))
+    logger.info("Finished dshowq")
 
     #FIXME: this still looks fugly
     bork_result = NagiosResult("lock release failed",

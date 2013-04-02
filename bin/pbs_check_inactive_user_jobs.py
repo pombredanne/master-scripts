@@ -30,13 +30,12 @@ import time
 
 from PBSQuery import PBSQuery
 
-import vsc.utils.generaloption
-from vsc import fancylogger
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapUser
 from vsc.ldap.filters import LdapFilter
 from vsc.ldap.utils import LdapQuery
-from vsc.utils.availability import check_high_availabity_host
+from vsc.utils import fancylogger
+from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.generaloption import simple_option
 from vsc.utils.mail import VscMail
 from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK

@@ -20,15 +20,16 @@ import os
 import sys
 import time
 
-from vsc.utils import fancylogger
-from vsc.administration.user import MukUser, cluster_user_pickle_location_map, cluster_user_pickle_store_map
+from vsc.administration.user import cluster_user_pickle_location_map, cluster_user_pickle_store_map
 from vsc.jobs.moab.checkjob import Checkjob, CheckjobInfo
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.utils import LdapQuery
+from vsc.utils import fancylogger
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
+from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.generaloption import simple_option
 from vsc.utils.lock import lock_or_bork, release_or_bork
-from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
 #Constants
@@ -89,14 +90,14 @@ def main():
 
     if not proceed_on_ha_service(opts.options.ha):
         logger.warning("Not running on the target host in the HA setup. Stopping.")
-        nagios_reporter(NAGIOS_EXIT_WARNING,
+        nagios_reporter.cache(NAGIOS_EXIT_WARNING,
                         NagiosResult("Not running on the HA master."))
         sys.exit(NAGIOS_EXIT_WARNING)
 
     lockfile = TimestampedPidLockfile(DCHECKJOB_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
 
-    logger.info("dcheckjob started a run")
+    logger.info("Starting dcheckjob")
 
     LdapQuery(VscConfiguration())
 
@@ -136,7 +137,7 @@ def main():
             logger.info("Dry run, not actually storing data for user %s at path %s" % (user, get_pickle_path(opts.options.location, user)[0]))
             logger.debug("Dry run, queue information for user %s is %s" % (user, job_information[user]))
 
-    logger.info("dcheckjob run end")
+    logger.info("Finished dcheckjobd")
 
     #FIXME: this still looks fugly
     bork_result = NagiosResult("lock release failed",
