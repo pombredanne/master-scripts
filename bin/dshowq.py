@@ -20,21 +20,17 @@ showq pickle files in the users personal fileset.
 
 It should run on a regular bass to avoid information to become (too) outdated.
 """
-# --------------------------------------------------------------------
-import cPickle
+
 import os
-import pwd
 import sys
 import time
 
-# --------------------------------------------------------------------
-# FIXME: we should move this to use the new fancylogger directly from vsc.utils
-import vsc.utils.fs_store as store
+
 import vsc.utils.generaloption
-from lockfile import LockFailed, NotLocked, NotMyLock
-from vsc import fancylogger
-from vsc.administration.user import MukUser
-from vsc.jobs.moab.showq import showq, ShowqInfo
+from vsc.utils import fancylogger
+from vsc.administration.user import cluster_user_pickle_store_map, cluster_user_pickle_location_map
+from vsc.utils.lock import lock_or_bork, release_or_bork
+from vsc.jobs.moab.showq import Showq
 from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
@@ -42,8 +38,8 @@ from vsc.ldap.utils import LdapQuery
 from vsc.utils.availability import check_high_availabity_host
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
-from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
-from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile, LockFileReadError
+from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK
+from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
 
 #Constants
@@ -60,83 +56,6 @@ DEFAULT_VO = 'gvo00012'
 logger = fancylogger.getLogger(__name__)
 fancylogger.logToScreen(True)
 fancylogger.setLogLevelInfo()
-
-
-def store_pickle_cluster_file(host, output, dry_run=False):
-    """Store the result of the showq command in the relevant pickle file.
-
-    @type output: string
-
-    @param output: showq output information
-    """
-    try:
-        if not dry_run:
-            store.store_pickle_data_at_user('root', '.showq.pickle.cluster_%s' % (host), output)
-        else:
-            logger.info("Dry run: skipping actually storing pickle files for cluster data")
-    except (UserStorageError, FileStoreError, FileMoveError), err:
-        # these should NOT occur, we're root, accessing our own home directory
-        logger.critical("Cannot store the out file %s at %s" % ('.showq.pickle.cluster_%s', '/root'))
-
-
-def load_pickle_cluster_file(host):
-    """Load the data from the pickled files.
-
-    @type host: string
-
-    @param host: cluster for which we load data
-
-    @returns: representation of the showq output.
-    """
-    home = pwd.getpwnam('root')[5]
-
-    if not os.path.isdir(home):
-        logger.error("Homedir %s of root not found" % (home))
-        return None
-
-    source = "%s/.showq.pickle.cluster_%s" % (home, host)
-
-    try:
-        f = open(source)
-        out = cPickle.load(f)
-        f.close()
-        return out
-    except Exception, err:
-        logger.error("Failed to load pickle from file %s: %s" % (source, err))
-        return None
-
-
-def get_showq_information(opts):
-    """Accumulate the showq information for the users on the given hosts."""
-
-    queue_information = ShowqInfo()
-    failed_hosts = []
-    reported_hosts = []
-
-    # Obtain the information from all specified hosts
-    for host in opts.options.hosts:
-
-        master = opts.configfile_parser.get(host, "master")
-        showq_path = opts.configfile_parser.get(host, "showq_path")
-
-        host_queue_information = showq(showq_path, host, ["--host=%s" % (master)], xml=True, process=True)
-
-        if not host_queue_information:
-            failed_hosts.append(host)
-            logger.error("Couldn't collect info for host %s" % (host))
-            logger.info("Trying to load cached pickle file for host %s" % (host))
-
-            host_queue_information = load_pickle_cluster_file(host)
-        else:
-            store_pickle_cluster_file(host, host_queue_information)
-
-        if not host_queue_information:
-            logger.error("Couldn't load info for host %s" % (host))
-        else:
-            queue_information.update(host_queue_information)
-            reported_hosts.append(host)
-
-    return (queue_information, reported_hosts, failed_hosts)
 
 
 def collect_vo_ldap(active_users):
@@ -216,51 +135,7 @@ def get_pickle_path(location, user_id):
     @returns: tuple of (string representing the directory where the pickle file should be stored,
                         the relevant storing function in vsc.utils.fs_store).
     """
-    if location == 'home':
-        return ('.showq.pickle', store.store_pickle_data_at_user_home)
-    elif location == 'scratch':
-        return (os.path.join(MukUser(user_id).pickle_path(), '.showq.pickle'), store.store_pickle_data_at_user)
-
-
-def lock_or_bork(lockfile, nagios_reporter):
-    """Take the lock on the given lockfile.
-
-    If the lock cannot be obtained:
-        - log a critical error
-        - store a critical failure in the nagios cache file
-        - exit the script
-    """
-    try:
-        lockfile.acquire()
-    except LockFailed, err:
-        logger.critical('Unable to obtain lock: lock failed')
-        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("script failed taking lock %s" % (DSHOWQ_LOCK_FILE)))
-        sys.exit(1)
-    except LockFileReadError, err:
-        logger.critical("Unable to obtain lock: could not read previous lock file %s" % (DSHOWQ_LOCK_FILE))
-        nagios_reporter.cache(NAGIOS_EXIT_CRITICAL, NagiosResult("script failed reading lockfile %s" % (DSHOWQ_LOCK_FILE)))
-        sys.exit(1)
-
-
-def release_or_bork(lockfile, nagios_reporter, nagios_result):
-    """ Release the lock on the given lockfile.
-
-    If the lock cannot be released:
-        - log a critcal error
-        - store a critical failure in the nagios cache file
-        - exit the script
-    """
-
-    try:
-        lockfile.release()
-    except NotLocked, err:
-        logger.critical('Lock release failed: was not locked.')
-        nagios_reporter.cache(NAGIOS_EXIT_WARNING, nagios_result)
-        sys.exit(1)
-    except NotMyLock, err:
-        logger.error('Lock release failed: not my lock')
-        nagios_reporter.cache(NAGIOS_EXIT_WARNING, nagios_result)
-        sys.exit(1)
+    return (os.path.join(cluster_user_pickle_location_map[location](user_id).pickle_path(), ".showq.pickle"), cluster_user_pickle_store_map[location])
 
 
 def main():
@@ -270,10 +145,11 @@ def main():
     # Note: other settings, e.g., ofr each cluster will be obtained from the configuration file
     options = {
         'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
+        'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
+        'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
-        'showq_path': ('the path to the real shpw executable',  None, 'store', ''),
         'information': ('the sort of information to store: user, vo, project', None, 'store', 'user'),
-        'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
+        'location': ('the location for storing the pickle file: gengar, muk', str, 'store', 'gengar'),
         'ha': ('high-availability master IP address', None, 'store', None),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
@@ -303,7 +179,18 @@ def main():
     logger.info("dshowq.py start time: %s" % time.strftime(tf, time.localtime(time.time())))
     logger.debug("generaloption location: %s" % (vsc.utils.generaloption.__file__))
 
-    (queue_information, reported_hosts, failed_hosts) = get_showq_information(opts)
+    clusters = {}
+    for host in opts.options.hosts:
+        master = opts.configfile_parser.get(host, "master")
+        showq_path = opts.configfile_parser.get(host, "showq_path")
+        clusters[host] = {
+            'master': master,
+            'path': showq_path
+        }
+
+    showq = Showq(clusters, cache_pickle=True, dry_run=opts.options.dry_run)
+
+    (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
     timeinfo = time.time()
 
     active_users = queue_information.keys()
