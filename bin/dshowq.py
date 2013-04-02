@@ -39,6 +39,7 @@ from vsc.ldap.configuration import VscConfiguration
 from vsc.ldap.entities import VscLdapGroup, VscLdapUser
 from vsc.ldap.filters import InstituteFilter
 from vsc.ldap.utils import LdapQuery
+from vsc.utils.availability import check_high_availabity_host
 from vsc.utils.fs_store import UserStorageError, FileStoreError, FileMoveError
 from vsc.utils.generaloption import simple_option
 from vsc.utils.nagios import NagiosReporter, NagiosResult, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING, NAGIOS_EXIT_CRITICAL
@@ -287,6 +288,12 @@ def main():
         logger.debug("Producing Nagios report and exiting.")
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
+
+    if not check_high_availabity_host(opts.options.ha):
+        logger.warning("Not running on the target host in the HA setup. Stopping.")
+        nagios_reporter(NAGIOS_EXIT_WARNING,
+                        NagiosResult("Not running on the HA master."))
+        sys.exit(NAGIOS_EXIT_WARNING)
 
     lockfile = TimestampedPidLockfile(DSHOWQ_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
