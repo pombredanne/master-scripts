@@ -70,6 +70,7 @@ def main():
         'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
         'hosts': ('the hosts/clusters that should be contacted for job information', None, 'extend', []),
         'location': ('the location for storing the pickle file: home, scratch', str, 'store', 'home'),
+        'ha': ('high-availability master IP address', None, 'store', None),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
     }
 
@@ -85,6 +86,12 @@ def main():
         logger.debug("Producing Nagios report and exiting.")
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
+
+    if not proceed_on_ha_service(opts.options.ha):
+        logger.warning("Not running on the target host in the HA setup. Stopping.")
+        nagios_reporter(NAGIOS_EXIT_WARNING,
+                        NagiosResult("Not running on the HA master."))
+        sys.exit(NAGIOS_EXIT_WARNING)
 
     lockfile = TimestampedPidLockfile(DCHECKJOB_LOCK_FILE)
     lock_or_bork(lockfile, nagios_reporter)
