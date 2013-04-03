@@ -35,7 +35,7 @@ PACKAGE = {
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
     'packages': ['vsc', 'vsc.utils'],
-    'scripts': ['bin/pbs_check_inactive_user_jobs.py', 'bin/dshowq.py', 'bin/quota_check_user_notification.py'],
+    'scripts': ['bin/dcheckjob.py', 'bin/pbs_check_inactive_user_jobs.py', 'bin/dshowq.py', 'bin/quota_check_user_notification.py'],
     'install_requires': [
         'python-vsc-administration >= 0.4',
         'python-vsc-base >= 1.2',
