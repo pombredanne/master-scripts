@@ -193,7 +193,7 @@ def main(args):
         'nagios': ('print out nagion information', None, 'store_true', False, 'n'),
         'nagios_check_filename': ('filename of where the nagios check data is stored', str, 'store', NAGIOS_CHECK_FILENAME),
         'nagios_check_interval_threshold': ('threshold of nagios checks timing out', None, 'store', NAGIOS_CHECK_INTERVAL_THRESHOLD),
-        'mail': ('mail a report to the hpc-admin list with job list for gracing or inactive users',
+        'mail-report': ('mail a report to the hpc-admin list with job list for gracing or inactive users',
                         None, 'store_true', False),
         'ha': ('high-availability master IP address', None, 'store', None),
         'dry-run': ('do not make any updates whatsoever', None, 'store_true', False),
@@ -227,7 +227,7 @@ def main(args):
         removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, opts.options.dry_run)
         removed_running = remove_running_jobs(jobs, inactive_users, opts.options.dry_run)
 
-        if opts.options.mail and not opts.options.dry_run:
+        if opts.options.mail_report and not opts.options.dry_run:
             if len(removed_queued) > 0 or len(removed_running) > 0:
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
