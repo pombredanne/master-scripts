@@ -46,6 +46,7 @@ PACKAGE = {
         'pbs_python >= 4.3',
         'python-vsc-filesystems',
         'python-vsc-jobs',
+        'netifaces',
     ]
 }
 
