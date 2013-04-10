@@ -38,7 +38,7 @@ from vsc.utils import fancylogger
 from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.generaloption import simple_option
 from vsc.utils.mail import VscMail
-from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK
+from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL, NAGIOS_EXIT_OK, NAGIOS_EXIT_WARNING
 
 
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
@@ -202,7 +202,7 @@ def main(args):
 
     nagios_reporter = NagiosReporter(NAGIOS_HEADER, NAGIOS_CHECK_FILENAME, NAGIOS_CHECK_INTERVAL_THRESHOLD)
 
-    if options.nagios:
+    if opts.options.nagios:
         nagios_reporter.report_and_exit()
         sys.exit(0)  # not reached
 
@@ -224,14 +224,14 @@ def main(args):
         t = time.ctime()
         jobs = pbs_query.getjobs()  # we just get them all
 
-        removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, options.dry_run)
-        removed_running = remove_running_jobs(jobs, inactive_users, options.dry_run)
+        removed_queued = remove_queued_jobs(jobs, grace_users, inactive_users, opts.options.dry_run)
+        removed_running = remove_running_jobs(jobs, inactive_users, opts.options.dry_run)
 
-        if options.mail and not options.dry_run:
+        if opts.options.mail and not opts.options.dry_run:
             if len(removed_queued) > 0 or len(removed_running) > 0:
                 mail_report(t, removed_queued, removed_running)
     except Exception, err:
-        logger.error("Something went wrong: {err}".format(err=err))
+        logger.exception("Something went wrong: {err}".format(err=err))
         nagios_reporter.cache(NAGIOS_EXIT_CRITICAL,
                               NagiosResult("Script failed, check log file ({logfile})".format(logfile=PBS_CHECK_LOG_FILE)))
         sys.exit(NAGIOS_EXIT_CRITICAL)
