@@ -42,7 +42,7 @@ from vsc.utils.nagios import NagiosResult, NagiosReporter, NAGIOS_EXIT_CRITICAL,
 
 
 fancylogger.logToFile('/var/log/pbs_check_inactive_user_jobs.log')
-fancylogger.setLogLevelDebug()
+fancylogger.setLogLevelInfo()
 
 logger = fancylogger.getLogger(name='pbs_check_inactive_user_jobs')
 
