@@ -40,7 +40,7 @@ PACKAGE = {
         'python-vsc-administration >= 0.4',
         'python-vsc-base >= 1.2',
         'python-vsc-config',
-        'python-vsc-packages-lockfile',
+        'python-lockfile',
         'python-vsc-ldap',
         'python-vsc-ldap-extension',
         'pbs_python >= 4.3',
