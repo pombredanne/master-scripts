@@ -2,4 +2,4 @@
 
 # Settings for the RPM generator
 
-all_packages=master_scripts
+all_packages=master-scripts
