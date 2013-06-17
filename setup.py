@@ -51,7 +51,8 @@ PACKAGE = {
         'pbs_python >= 4.3',
         'python-vsc-filesystems',
         'python-vsc-jobs',
-    ]
+    ],
+    'provides': ['python-master_script = 1.6'],
 }
 
 
