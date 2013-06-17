@@ -30,14 +30,13 @@ shared_setup.SHARED_TARGET.update({
 
 PACKAGE = {
     'name': 'master-scripts',
-    'version': '1.8',
+    'version': '1.9',
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
     'package_dir': '',
     'scripts': [
         'bin/dcheckjob.py',
-        'bin/dquota.py',
         'bin/dshowq.py',
         'bin/pbs_check_inactive_user_jobs.py',
     ],
