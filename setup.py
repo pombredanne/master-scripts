@@ -52,7 +52,7 @@ PACKAGE = {
         'python-vsc-filesystems',
         'python-vsc-jobs',
     ],
-    'provides': ['python-master_script = 1.6'],
+    'provides': ['python-master_scripts=1.6'],
 }
 
 
