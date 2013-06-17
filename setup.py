@@ -37,7 +37,7 @@ PACKAGE = {
     'packages': ['vsc', 'vsc.utils'],
     'scripts': [
         'bin/dcheckjob.py',
-        'bin/dquota.py'
+        'bin/dquota.py',
         'bin/dshowq.py',
         'bin/pbs_check_inactive_user_jobs.py',
     ],
