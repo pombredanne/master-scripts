@@ -20,7 +20,7 @@ from vsc.install.shared_setup import ag, sdw, wdp, kh
 
 def remove_bdist_rpm_source_file():
     """List of files to remove from the (source) RPM."""
-    return ['lib/vsc/__init__.py', 'lib/vsc/utils/__init__.py']
+    return ['lib/vsc/__init__.py']
 
 shared_setup.remove_extra_bdist_rpm_files = remove_bdist_rpm_source_file
 shared_setup.SHARED_TARGET.update({
@@ -34,7 +34,7 @@ PACKAGE = {
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
-    'packages': ['vsc', 'vsc.utils'],
+    'packages': ['vsc'],
     'scripts': [
         'bin/dcheckjob.py',
         'bin/dquota.py',
@@ -51,7 +51,6 @@ PACKAGE = {
         'pbs_python >= 4.3',
         'python-vsc-filesystems',
         'python-vsc-jobs',
-        'netifaces',
     ]
 }
 
