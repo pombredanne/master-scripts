@@ -34,6 +34,7 @@ PACKAGE = {
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
+    'package_dir': '',
     'scripts': [
         'bin/dcheckjob.py',
         'bin/dquota.py',
