@@ -30,12 +30,17 @@ shared_setup.SHARED_TARGET.update({
 
 PACKAGE = {
     'name': 'master_scripts',
-    'version': '1.6',
+    'version': '1.7',
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
     'packages': ['vsc', 'vsc.utils'],
-    'scripts': ['bin/dcheckjob.py', 'bin/pbs_check_inactive_user_jobs.py', 'bin/dshowq.py', 'bin/quota_check_user_notification.py'],
+    'scripts': [
+        'bin/dcheckjob.py',
+        'bin/dquota.py'
+        'bin/dshowq.py',
+        'bin/pbs_check_inactive_user_jobs.py',
+    ],
     'install_requires': [
         'python-vsc-administration >= 0.4',
         'python-vsc-base >= 1.2',
