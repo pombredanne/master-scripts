@@ -18,8 +18,8 @@ NAGIOS_HEADER = 'release_jobholds'
 NAGIOS_CHECK_FILENAME = '/var/cache/icinga/%s.nagios.json.gz' % NAGIOS_HEADER
 NAGIOS_CHECK_INTERVAL_THRESHOLD = 60 * 60  # 60 minutes
 
-RELEASEJOB_CACHE_FILE = '/var/cache/releasejob.json.gz'
-RELEASEJOB_LOCK_FILE = '/var/run/releasejob.lock'
+RELEASEJOB_CACHE_FILE = '/var/cache/%s.json.gz' % NAGIOS_HEADER
+RELEASEJOB_LOCK_FILE = '/var/run/%s.lock' % NAGIOS_HEADER
 
 RELEASEJOB_LIMITS = {
     # jobs in hold per user (maximum of all users)
@@ -61,7 +61,7 @@ def process_hold(queue_information, clusters, dry_run=False):
         'peruser': 0,
         'total': 0,
         'release': 0,
-        }
+    }
 
     release_jobids = []
 
