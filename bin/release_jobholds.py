@@ -44,7 +44,7 @@ def process_hold(queue_information, clusters, dry_run=False):
     releasejob_cache = FileCache(RELEASEJOB_CACHE_FILE)
 
     # release the jobs, prepare the command
-    m = MoabCommand(cache_pickle=False, dry_run=opts.options.dry_run)
+    m = MoabCommand(cache_pickle=False, dry_run=dry_run)
     for hosts, data in clusters.items():
         data['path'] = data['mpath']
     m.clusters = clusters
@@ -86,7 +86,7 @@ def process_hold(queue_information, clusters, dry_run=False):
                     if dry_run:
                         _log.info("Dry run %s" % cmd)
                     else:
-                        m._run_moab_command(cmd)
+                        m._run_moab_command(cmd, cluster, [])
 
         # update stats
         stats['peruser'] = max(stats['peruser'], totaluser)
@@ -131,11 +131,11 @@ def main():
 
     opts = simple_option(options)
 
-    nag = SimpleNagios(_exit=NAGIOS_CHECK_FILENAME)
+    nag = SimpleNagios(_cache=NAGIOS_CHECK_FILENAME)
 
     if opts.options.ha and not proceed_on_ha_service(opts.options.ha):
-        opts.log.info("Not running on the target host in the HA setup. Stopping.")
-        nag.info("Not running on the HA master.")
+        _log.info("Not running on the target host in the HA setup. Stopping.")
+        nag.ok("Not running on the HA master.")
     else:
         # parse config file
         clusters = {}
@@ -157,6 +157,8 @@ def main():
         stats.update(RELEASEJOB_LIMITS)
         stats['message'] = "released %s jobs in hold" % len(released_jobids)
         nag._eval_and_exit(**stats)
+
+    _log.info("Cached nagios state %s" % nag._final_state)
 
 if __name__ == '__main__':
     main()
