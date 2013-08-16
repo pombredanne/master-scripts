@@ -39,14 +39,20 @@ _log = getLogger(__name__, fname=False)
 logToScreen(True)
 setLogLevelInfo()
 
-def process_hold(queue_information, clusters, dry_run=False):
+def process_hold(clusters, dry_run=False):
     """Process a filtered queueinfo dict"""
     releasejob_cache = FileCache(RELEASEJOB_CACHE_FILE)
+
+    # get the showq data
+    for hosts, data in clusters.items():
+        data['path'] = data['spath']  # showq path
+    showq = Showq(clusters, cache_pickle=True)
+    (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
 
     # release the jobs, prepare the command
     m = MoabCommand(cache_pickle=False, dry_run=dry_run)
     for hosts, data in clusters.items():
-        data['path'] = data['mpath']
+        data['path'] = data['mpath']  # mjobctl path
     m.clusters = clusters
 
     # read the previous data
@@ -70,23 +76,49 @@ def process_hold(queue_information, clusters, dry_run=False):
         totaluser = 0
         for cluster, data in clusterdata.items():
             olddata = oldclusterdata.setdefault(cluster, {})
+            # DRMJID is supposed to be unique
+            # get all oldjobids in one dict
+            oldjobs = dict([(j['DRMJID'], j['_release']) for jt in olddata.values() for j in  jt])
             for jobtype, jobs in data.items():
-                # DRMJID is suppsoed to be unique
-                oldjobs = dict([(j['DRMJID'], j['_release']) for j in  olddata.setdefault(jobtype, [])])
-                totaluser += len(jobs)
-                # process the jobs
-                for job in jobs:
+                removeids = []
+                for idx, job in enumerate(jobs):
                     jid = job['DRMJID']
-                    release = max(oldjobs.get(jid, 0), 0) + 1
-                    release_jobids.append((jid, jobtype))
-                    stats['release'] = max(stats['release'], release)
-                    job['_release'] = release
-                    # release it
-                    cmd = [m.clusters[cluster]['path'], '-u', jid]
-                    if dry_run:
-                        _log.info("Dry run %s" % cmd)
+
+                    if jobtype in RELEASEJOB_SUPPORTED_HOLDTYPES:
+                        totaluser += 1
+                        release = max(oldjobs.get(jid, 0), 0) + 1
+                        job['_release'] = release
+                        stats['release'] = max(stats['release'], release)
+                        release_jobids.append(jid)
+                        # release the job
+                        cmd = [m.clusters[cluster]['path'], '-u', jid]
+                        if dry_run:
+                            _log.info("Dry run %s" % cmd)
+                        else:
+                            m._run_moab_command(cmd, cluster, [])
                     else:
-                        m._run_moab_command(cmd, cluster, [])
+                        # keep historical data, eg a previously released job could be idle now
+                        # but keep the counter in case it gets held again
+                        try:
+                            release = oldjobs[jid]
+                            job['_release'] = release
+                        except KeyError:
+                            # not previously in hold, remove it
+                            removeids.append(idx)
+
+                # remove the jobs (in reverse order)
+                for remove_idx in removeids[::-1]:
+                    jobs.pop(remove_idx)
+
+                # cleanup
+                if len(jobs) == 0:
+                    data.pop(jobtype)
+            # cleanup
+            if len(data) == 0:
+                clusterdata.pop(cluster)
+        # cleanup
+        if len(clusterdata) == 0:
+            queue_information.pop(user)
 
         # update stats
         stats['peruser'] = max(stats['peruser'], totaluser)
@@ -102,8 +134,6 @@ def process_hold(queue_information, clusters, dry_run=False):
 
 def get_queue_information(clusters):
     """Get the queue information from the cluster(s). Remove unsupported jobtypes"""
-    showq = Showq(clusters, cache_pickle=True)
-    (queue_information, reported_hosts, failed_hosts) = showq.get_moab_command_information()
 
     # santize by removing all unsupported jobtypes
     for user, clusterdata in queue_information.items():
@@ -145,13 +175,12 @@ def main():
             mjobctl_path = opts.configfile_parser.get(host, "mjobctl_path")
             clusters[host] = {
                 'master': master,
-                'path': showq_path,
+                'spath': showq_path,
                 'mpath': mjobctl_path,
             }
 
         # process the new and previous data
-        queue_information = get_queue_information(clusters)
-        released_jobids, stats = process_hold(queue_information, clusters, dry_run=opts.options.dry_run)
+        released_jobids, stats = process_hold(clusters, dry_run=opts.options.dry_run)
 
         # nagios state
         stats.update(RELEASEJOB_LIMITS)
