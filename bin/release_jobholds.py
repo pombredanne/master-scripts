@@ -187,7 +187,7 @@ def main():
         stats['message'] = "released %s jobs in hold" % len(released_jobids)
         nag._eval_and_exit(**stats)
 
-    _log.info("Cached nagios state: %s %s" % (nag._final_state[0][0], nag._final_state[1]))
+    _log.info("Cached nagios state: %s %s" % (nag._final_state[0][1], nag._final_state[1]))
 
 if __name__ == '__main__':
     main()
