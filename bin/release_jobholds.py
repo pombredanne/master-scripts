@@ -92,6 +92,7 @@ def process_hold(clusters, dry_run=False):
                         release_jobids.append(jid)
                         # release the job
                         cmd = [m.clusters[cluster]['path'], '-u', jid]
+                        _log.info("Releasing job %s cluster %s for the %s-th time." % (jid, cluster, release))
                         if dry_run:
                             _log.info("Dry run %s" % cmd)
                         else:
