@@ -2,14 +2,14 @@
 
 import sys
 
-from vsc.utils.fancylogger import getLogger, logToScreen, setLogLevelInfo
 
 from vsc.jobs.moab.internal import MoabCommand
 from vsc.jobs.moab.showq import Showq
 from vsc.utils.availability import proceed_on_ha_service
 from vsc.utils.cache import FileCache
-from vsc.utils.lock import lock_or_bork, release_or_bork
+from vsc.utils.fancylogger import getLogger, logToScreen, setLogLevelInfo
 from vsc.utils.generaloption import simple_option
+from vsc.utils.lock import lock_or_bork, release_or_bork
 from vsc.utils.nagios import SimpleNagios
 from vsc.utils.timestamp_pid_lockfile import TimestampedPidLockfile
 
