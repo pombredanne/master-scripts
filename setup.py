@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: latin-1 -*-
-##
+# #
 # Copyright 2009-2013 Ghent University
 #
 # Copyright 2009-2012 Ghent University
@@ -10,7 +10,7 @@
 #
 # All rights reserved.
 #
-##
+# #
 """Basic setup.py for master scripts"""
 
 from distutils.core import setup
@@ -30,7 +30,7 @@ shared_setup.SHARED_TARGET.update({
 
 PACKAGE = {
     'name': 'master-scripts',
-    'version': '1.9',
+    'version': '1.9.1',
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
@@ -39,6 +39,7 @@ PACKAGE = {
         'bin/dcheckjob.py',
         'bin/dshowq.py',
         'bin/pbs_check_inactive_user_jobs.py',
+        'bin/release_jobholds.py',
     ],
     'install_requires': [
         'python-vsc-administration >= 0.4',
