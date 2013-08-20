@@ -33,7 +33,7 @@ RELEASEJOB_LIMITS = {
     'release_critical': 70,
 }
 
-RELEASEJOB_SUPPORTED_HOLDTYPES = ('BatchHold')
+RELEASEJOB_SUPPORTED_HOLDTYPES = ('BatchHold',)
 
 _log = getLogger(__name__, fname=False)
 logToScreen(True)

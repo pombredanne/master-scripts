@@ -30,7 +30,7 @@ shared_setup.SHARED_TARGET.update({
 
 PACKAGE = {
     'name': 'master-scripts',
-    'version': '1.9.1',
+    'version': '1.9.2',
     'author': [ag, kh, sdw, wdp],
     'description': 'UGent HPC scripts that should be deployed on the masters',
     'license': 'LGPL',
